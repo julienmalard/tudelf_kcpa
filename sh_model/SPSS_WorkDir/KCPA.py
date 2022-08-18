@@ -16,21 +16,24 @@ from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-PLOT_DIR = "plots"
+PLOT_DIR = "../../plots"
+DATA_DIR = "../../input_data"
 plt.rcParams.update({'font.size': 12})
 if not os.path.isdir(PLOT_DIR):
     os.makedirs(PLOT_DIR)
 # %%get dat
 # dat=pd.read_excel("KPCA_dat.xlsx", header=0)
-dat = pd.read_excel("../../input_data/Data_Dennis/Data/KPCA/KPCA_dat_adj.xlsx", header=0)
-dat_irr = pd.read_excel("../../input_data/Data_Dennis/Data/KPCA/KPCA_dat_adj_irr.xlsx", header=0)
+dat = pd.read_excel(f"{DATA_DIR}/KPCA/KPCA_dat_adj.xlsx", header=0)
+dat_irr = pd.read_excel(f"{DATA_DIR}/KPCA/KPCA_dat_adj_irr.xlsx", header=0)
 
-X = StandardScaler().fit_transform(dat.iloc[:, 0:-3])
-X_irr = StandardScaler().fit_transform(dat_irr.iloc[:, 0:-3])
+x_vars = ['ChildrenHelp', 'AreaCot', 'CotYield', 'SeedsCost', 'FertAmount', 'SoilDepth', 'Lat', 'Long', 'Prec', 'Evap', 'Irr']
+y_var = 'YieldObs'
+X = StandardScaler().fit_transform(dat.loc[:, x_vars])
+X_irr = StandardScaler().fit_transform(dat_irr.loc[:, x_vars])
 # X = StandardScaler().fit_transform(dat.iloc[:,[0,1,3,4,5,6,7,8,9,10,12]])
 # X = StandardScaler().fit_transform(dat.iloc[:,[0,1,2]])
 # X = StandardScaler().fit_transform(np.array(dat.CotYield).reshape(-1,1))
-y = dat.iloc[:, -3]
+y = dat.loc[:, y_var]
 
 # split training and test data
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=1)
@@ -68,6 +71,7 @@ plt.title("Variance Explained, Kernel: {}".format(kernelType), fontsize=18)
 plt.xlabel("Principal Components in Feature Space", fontsize=18)
 plt.ylabel("Variance Explained [-]", fontsize=18)
 plt.savefig(f'{PLOT_DIR}/varExplained_{kernelType}_deg{deg}.png',dpi=300, bbox_inches = "tight")
+plt.clf()
 
 # %% fitting model with significant pval
 X_model = X_train[:, 1:nCount + 1]
@@ -141,8 +145,7 @@ plt.text(-1800, 3600, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', f
 plt.plot(np.arange(-2000, 4000), np.arange(-2000, 4000), color="black")
 plt.xlim(-2000, 4000)
 plt.ylim(-2000, 4000)
-# plt.title("Predicted vs. Observed Total Error, Kernel: {}, Degree: {}".format(kernelType,deg),fontsize=18)
-plt.title("Predicted vs. Observed Total Error, Kernel: {} (test data)".format(kernelType), fontsize=18)
+plt.title(f"Predicted vs. Observed Total Error, Kernel: {kernelType}, Degree: {deg}", fontsize=18)
 plt.xlabel("Predicted Total Error [kg/ha]", fontsize=18)
 plt.ylabel("Observed Total Error [kg/ha]", fontsize=18)
 plt.grid(color='k', linestyle='-', linewidth=0.1)
@@ -187,10 +190,10 @@ print('NS of {} Kernel PCA Test: {} [-]'.format(kernelType, NS))
 print('NS log of {} Kernel PCA Test: {} [-]'.format(kernelType, NS_log))
 
 # %% plot adjusted yield
-Yield_adj = dat.iloc[:, -2] + y_pred
+Yield_adj = dat.loc[:, 'YieldModel'] + y_pred
 
 Xplot = Yield_adj
-Yplot = dat.iloc[:, -1]
+Yplot = dat.loc[:, y_var]
 
 plt.figure(figsize=(10, 8))
 plt.fill_between(np.unique(Xplot), np.unique(estPlot2.predict(sm.add_constant(Xplot))) + 450,
@@ -222,7 +225,7 @@ print('MAE of {} Predicted Yield: {} [kg/ha]'.format(kernelType, MAE))
 print('NS of {} Predicted Yield: {} [-]'.format(kernelType, NS))
 print('NS log of {} Predicted Yield: {} [-]'.format(kernelType, NS_log))
 # %% histogram of er
-a = dat.iloc[:, -1] - (dat.iloc[:, -2] + y_pred)
+a = dat.loc[:, 'YieldObs'] - (dat.loc[:, 'YieldModel'] + y_pred)
 
 mean = 0
 std = 150
@@ -248,10 +251,10 @@ X2_irr = sm.add_constant(
     X_all_irr[:, (1, 2, 3, 4, 5, 6)])  # components cumulative to >90% variance and significant in regression model
 y_pred_irr = est2.predict(X2_irr)
 
-Yield_adj_irr = dat_irr.iloc[:, -2] + y_pred_irr
+Yield_adj_irr = dat_irr.loc[:, 'YieldModel'] + y_pred_irr
 
 # %% evaluating benefit
-survey_dat = pd.read_csv("../input_data/Data_Dennis/Data/Baseline/Final_Analysis_345_nrh_TijmenData_v4_villageEdit.csv", header=0)
+survey_dat = pd.read_csv(f"{DATA_DIR}/Baseline/Final_Analysis_345_nrh_TijmenData_v4.csv", header=0)
 
 Irr_exist = survey_dat["water/area_irrig"] > 0
 CottonArea = survey_dat['financial_information/area_cotton']
@@ -365,7 +368,7 @@ plt.savefig(f'{PLOT_DIR}/histYield_existingIrr.png',dpi=300, bbox_inches = "tigh
 # %%
 Xplot = Yield_adj_irr
 Xplot2 = Yield_adj
-Yplot = dat_irr.iloc[:, -1]
+Yplot = dat_irr.loc[:, 'YieldObs']
 
 plt.figure(figsize=(10, 8))
 plt.fill_between(np.unique(Xplot), np.unique(estPlot2.predict(sm.add_constant(Xplot))) + 450,
@@ -390,7 +393,7 @@ plt.ylabel("Observed Yield [kg/ha]", fontsize=18)
 plt.legend()
 
 # %% linear regressions of pc results from spss
-SPSS_dat = pd.read_excel("PCs_TotalError.xlsx", header=0)
+SPSS_dat = pd.read_excel(f"{DATA_DIR}/KPCA/PCs_TotalError.xlsx", header=0)
 
 plotfit = np.arange(-2.2, 3.5, 0.5)
 

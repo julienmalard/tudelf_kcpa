@@ -108,13 +108,13 @@ Constants1 = Original.copy()
 Parameters1 = Adjusted.copy()
 
 # Importing Soil depth and coordinates
-extra_data = pd.read_csv('../input_data/Data_Dennis/Data/Other/rainfall_soiltype.csv', usecols=[0, 1, 2, 3, 4, 5, 1473])
+extra_data = pd.read_csv('../input_data/Other/rainfall_soiltype.csv', usecols=[0, 1, 2, 3, 4, 5, 1473])
 
 # soil depth, note to self change the var name
 soil_depth = extra_data['storagedepth_mm_4326'].values
 Smax = extra_data['storagedepth_mm_4326'].values * 0.5
 
-WD = pd.read_csv('../input_data/Data_Dennis/Data/Other/Water_demand.csv', sep=';', header=0, names=None)
+WD = pd.read_csv('../input_data/Other/Water_demand.csv', sep=';', header=0, names=None)
 Kc_grass = 0.75 * np.zeros(366)  # Grass Kc = 0.75
 Kc_cotton = Kc_grass
 Kc_cotton[157:187] = .35
@@ -248,8 +248,8 @@ Furrow_fp500 = {'price': 11500,  # Rs # 18000 pump + 5000 pipes /2ha.
 
 # %% ============================ Getting Survey Data ===========================
 # old_survey=pd.read_csv("indat/Final_Analysis_345_nrh_TijmenData_v4.csv")
-raw_survey = pd.read_csv("../input_data/Data_Dennis/Data/Baseline/Final_Analysis_345_nrh_TijmenData_v4.csv")
-raw_survey_original = pd.read_csv("../input_data/Data_Dennis/Data/Baseline/Final_Analysis_345_nrh_TijmenData_v4.csv")
+raw_survey = pd.read_csv("../input_data/Baseline/Final_Analysis_345_nrh_TijmenData_v4.csv")
+raw_survey_original = pd.read_csv("../input_data/Baseline/Final_Analysis_345_nrh_TijmenData_v4.csv")
 
 mod_survey = pd.DataFrame()
 mod_survey['Res No'] = raw_survey['Reservoir No']
@@ -300,7 +300,7 @@ elif daily_bool == 0:
 
 if daily_bool == 1:
     res = pd.read_excel('../input_data/Data_Dennis/Data/Reservoirs/rsv_D_1979-2014.xlsx', header=0, sep=",")
-    res_coor = pd.read_csv('../input_data/Data_Dennis/Data/Reservoirs/reservoir locations solidaridad.csv', header=0, sep=",")
+    res_coor = pd.read_csv('../input_data/Reservoirs/reservoir locations solidaridad.csv', header=0, sep=",")
 
     ResID = np.arange(res['RES'].nunique())
 
@@ -324,7 +324,7 @@ if daily_bool == 1:
         mod_survey['Res Count'].iloc[i] = res_intake[mod_survey['Res Intake'][i]]
 else:
     res = pd.read_excel('../input_data/Data_Dennis/Data/Reservoirs/Ghatanji_350_M_1981_2019.xlsx', header=0)
-    res_coor = pd.read_csv('../input_data/Data_Dennis/Data/Reservoirs/Ghatanji_350_M_Coord.csv', header=0, sep=",")
+    res_coor = pd.read_csv('../input_data/Reservoirs/Ghatanji_350_M_Coord.csv', header=0, sep=",")
 
     ResID = np.arange(res['RES'].nunique())
 
@@ -1197,8 +1197,8 @@ print("Farmers that benefit from new pond with 100% subsidy: " + str(
 # Dennis: the yield and capital are calculated using the data from the mdp survey in 2019
 # model used is tijmen's code: simulator15_cotton
 OldYears = np.linspace(2000, 2019, 20)
-OldYield = pd.read_csv("../input_data/Data_Dennis/Data/Baseline/OldYield.csv", names=OldYears, delimiter=",")
-OldCapital = pd.read_csv("../input_data/Data_Dennis/Data/Baseline/OldCapital.csv", names=OldYears, delimiter=",")
+OldYield = pd.read_csv("../input_data/Baseline/OldYield.csv", names=OldYears, delimiter=",")
+OldCapital = pd.read_csv("../input_data/Baseline/OldCapital.csv", names=OldYears, delimiter=",")
 
 # %%
 results = pd.DataFrame()

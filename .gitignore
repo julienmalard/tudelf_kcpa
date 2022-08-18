@@ -141,4 +141,4 @@ cython_debug/
 
 .idea
 input_data
-sh_model/SPSS_WorkDir/plots
+plots
