@@ -112,16 +112,16 @@ class KPCAModel(object):
 
         # Hack for also predicting final yield when predictand is yield difference
         if self.var_Y in ["YieldDiff", "YieldObs"]:
-            yield_adj = self.data["YieldModel"]
+            yield_adj = y_pred_all
             if self.var_Y == "YieldDiff":
-                yield_adj += y_pred_all
+                yield_adj += self.data["YieldModel"]
 
             yield_obs = self.data["YieldObs"]
 
             print(f'MAE of {self.kernel} Predicted Yield: {mae(yield_adj, yield_obs)} [kg/ha]')
             print(f'NS of {self.kernel} Predicted Yield: {ns(yield_adj, yield_obs)} [-]')
             print(f'NS log of {self.kernel} Predicted Yield: {ns_log(yield_adj, yield_obs)} [-]')
-            self._plot_adjusted_predicted_yield(y_pred_all, y, yield_adj, yield_obs, folder=folder)
+            self._plot_adjusted_predicted_yield(yield_adj, yield_obs, folder=folder)
 
         self._plot_histogram(y_pred_all, y, folder=folder)
 
@@ -164,11 +164,9 @@ class KPCAModel(object):
 
         plt.scatter(x_plot, y_plot, c="red", s=20, edgecolor='k')
         min_ = min(x_plot.min(), y_plot.min())
-        max_ = min(x_plot.max(), y_plot.max())
+        max_ = max(x_plot.max(), y_plot.max())
 
-        Xplot2_sm = sm.add_constant(x_plot)
-        estPlot_sm = sm.OLS(y_plot, Xplot2_sm)
-        fitted_estplot = estPlot_sm.fit()
+        fitted_estplot = sm.OLS(y_plot, sm.add_constant(x_plot)).fit()
 
         adj_r2Plot = round(fitted_estplot.rsquared_adj, 3)
         plt.text(min_+300, max_-300, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
@@ -195,19 +193,17 @@ class KPCAModel(object):
 
         plt.scatter(x_plot, y_plot, c="red", s=20, edgecolor='k')
         min_ = min(x_plot.min(), y_plot.min())
-        max_ = min(x_plot.max(), y_plot.max())
+        max_ = max(x_plot.max(), y_plot.max())
 
-        Xplot2_sm = sm.add_constant(x_plot)
-        estPlot_sm = sm.OLS(y_plot, Xplot2_sm)
-        fitted_estPlot = estPlot_sm.fit()
-        adj_r2Plot = round(fitted_estPlot.rsquared_adj, 3)
+        fitted_est_plot = sm.OLS(y_plot, sm.add_constant(x_plot)).fit()
+        adj_r2_plot = round(fitted_est_plot.rsquared_adj, 3)
 
-        plt.text(min_+300, max_-100, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
-        plt.text(min_+300, max_-500, 'µ = {}'.format(round(fitted_estPlot.params[fitted_estPlot.params.index[1]], 3)),
+        plt.text(min_ + 300, max_ - 100, '$r^2$ = {}'.format(adj_r2_plot), ha='left', va='center', fontsize=18)
+        plt.text(min_+300, max_-500, 'µ = {}'.format(round(fitted_est_plot.params[fitted_est_plot.params.index[1]], 3)),
                  ha='left', va='center', fontsize=18)
 
         plt.plot(np.arange(min_, max_), np.arange(min_, max_), color="black")
-        plt.plot(np.unique(x_plot), np.unique(fitted_estPlot.predict(sm.add_constant(x_plot))), color="black",
+        plt.plot(np.unique(x_plot), np.unique(fitted_est_plot.predict(sm.add_constant(x_plot))), color="black",
                  linestyle='--')
         plt.xlim(min_, max_)
         plt.ylim(min_, max_)
@@ -219,20 +215,19 @@ class KPCAModel(object):
         plt.savefig(f'{folder}/KPCA_{self.kernel}_alldata_{self.var_Y}.png', dpi=300, bbox_inches="tight")
         plt.close()
 
-    def _plot_adjusted_predicted_yield(self, y_pred, y, y_adjusted, y_obs, folder):
+    def _plot_adjusted_predicted_yield(self, y_pred, y_obs, folder):
+        print("range yield obs: ", y_obs.min(), y_obs.max())
         # plot adjusted yield
-        xplot2_sm = sm.add_constant(y_pred)
-        est_plot_sm = sm.OLS(y, xplot2_sm)
-        fitted_estplot = est_plot_sm.fit()
+        fitted_estplot = sm.OLS(y_obs, sm.add_constant(y_pred)).fit()
 
         plt.figure(figsize=(10, 8))
-        plt.fill_between(np.unique(y_adjusted), np.unique(fitted_estplot.predict(sm.add_constant(y_adjusted))) + 450,
-                         np.unique(fitted_estplot.predict(sm.add_constant(y_adjusted))) - 450, color='yellow', alpha='0.5')
+        plt.fill_between(np.unique(y_pred), np.unique(fitted_estplot.predict(sm.add_constant(y_pred))) + 450,
+                         np.unique(fitted_estplot.predict(sm.add_constant(y_pred))) - 450, color='yellow', alpha='0.5')
         plt.scatter(y_pred, y_obs, c="red", s=20, edgecolor='k')
         min_ = min(y_pred.min(), y_obs.min())
-        max_ = min(y_pred.max(), y_obs.max())
+        max_ = max(y_pred.max(), y_obs.max())
 
-        xplot2_sm = sm.add_constant(y_adjusted)
+        xplot2_sm = sm.add_constant(y_pred)
         est_plot_sm = sm.OLS(y_obs, xplot2_sm)
         fitted_estplot = est_plot_sm.fit()
         adj_r2Plot = round(fitted_estplot.rsquared_adj, 3)
@@ -242,7 +237,7 @@ class KPCAModel(object):
                  va='center', fontsize=18)
 
         plt.plot(np.arange(min_, max_), np.arange(min_, max_), color="black")
-        plt.plot(np.unique(y_adjusted), np.unique(fitted_estplot.predict(sm.add_constant(y_adjusted))), color="black",
+        plt.plot(np.unique(y_pred), np.unique(fitted_estplot.predict(sm.add_constant(y_pred))), color="black",
                  linestyle='--')
         plt.xlim(min_, max_)
         plt.ylim(min_, max_)
