@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import scipy.stats as stats
 import statsmodels.api as sm
+from scipy.stats import norm
 from sklearn.decomposition import KernelPCA
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
@@ -18,8 +19,8 @@ from sklearn.preprocessing import StandardScaler
 
 plt.rcParams.update({'font.size': 12})
 
-DATA_DIR = "../../input_data"
-PLOT_DIR = "../../plots"
+DATA_DIR = "../input_data"
+PLOT_DIR = "../plots"
 
 
 def mae(pred, obs):
@@ -110,8 +111,11 @@ class KPCAModel(object):
         self._plot_alldata(y_pred_all, y, folder=folder)
 
         # Hack for also predicting final yield when predictand is yield difference
-        if self.var_Y == "YieldDiff":
-            yield_adj = self.data["YieldModel"] + y_pred_all
+        if self.var_Y in ["YieldDiff", "YieldObs"]:
+            yield_adj = self.data["YieldModel"]
+            if self.var_Y == "YieldDiff":
+                yield_adj += y_pred_all
+
             yield_obs = self.data["YieldObs"]
 
             print(f'MAE of {self.kernel} Predicted Yield: {mae(yield_adj, yield_obs)} [kg/ha]')
@@ -159,20 +163,28 @@ class KPCAModel(object):
         y_plot = y_test
 
         plt.scatter(x_plot, y_plot, c="red", s=20, edgecolor='k')
-        Xplot2 = sm.add_constant(x_plot)
-        estPlot = sm.OLS(y_plot, Xplot2)
-        estPlot2 = estPlot.fit()
+        min_ = min(x_plot.min(), y_plot.min())
+        max_ = min(x_plot.max(), y_plot.max())
 
-        adj_r2Plot = round(estPlot2.rsquared_adj, 3)
-        plt.text(-1800, 3600, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
-        plt.plot(np.arange(-2000, 4000), np.arange(-2000, 4000), color="black")
-        plt.xlim(-2000, 4000)
-        plt.ylim(-2000, 4000)
+        Xplot2_sm = sm.add_constant(x_plot)
+        estPlot_sm = sm.OLS(y_plot, Xplot2_sm)
+        fitted_estplot = estPlot_sm.fit()
+
+        adj_r2Plot = round(fitted_estplot.rsquared_adj, 3)
+        plt.text(min_+300, max_-300, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
+        plt.text(min_+300, max_-500, 'µ = {}'.format(round(fitted_estplot.params[fitted_estplot.params.index[1]], 3)), ha='left',
+                 va='center', fontsize=18)
+
+        plt.plot(np.arange(min_, max_), np.arange(min_, max_), color="black")
+        plt.plot(np.unique(x_plot), np.unique(fitted_estplot.predict(sm.add_constant(x_plot))), color="black",
+                 linestyle='--')
+        plt.xlim(min_, max_)
+        plt.ylim(min_, max_)
         plt.title(f"Predicted vs. Observed {self.var_Y}, Kernel: {self.kernel} (test data)", fontsize=18)
         plt.xlabel(f"Predicted {self.var_Y} [kg/ha]", fontsize=18)
         plt.ylabel(f"Observed {self.var_Y} [kg/ha]", fontsize=18)
         plt.grid(color='k', linestyle='-', linewidth=0.1)
-        plt.savefig(f'{folder}/KPCA_{self.kernel}_deg{self.deg}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/KPCA_{self.kernel}_validate_{self.var_Y}.png', dpi=300, bbox_inches="tight")
         plt.close()
 
     def _plot_alldata(self, y_pred, y, folder):
@@ -182,56 +194,69 @@ class KPCAModel(object):
         y_plot = y
 
         plt.scatter(x_plot, y_plot, c="red", s=20, edgecolor='k')
-        Xplot2 = sm.add_constant(x_plot)
-        estPlot = sm.OLS(y_plot, Xplot2)
-        fitted_estPlot = estPlot.fit()
+        min_ = min(x_plot.min(), y_plot.min())
+        max_ = min(x_plot.max(), y_plot.max())
+
+        Xplot2_sm = sm.add_constant(x_plot)
+        estPlot_sm = sm.OLS(y_plot, Xplot2_sm)
+        fitted_estPlot = estPlot_sm.fit()
         adj_r2Plot = round(fitted_estPlot.rsquared_adj, 3)
-        plt.text(-1800, 3600, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
-        plt.plot(np.arange(-2000, 4000), np.arange(-2000, 4000), color="black")
-        plt.plot(np.unique(x_plot), np.unique(fitted_estPlot.predict(sm.add_constant(x_plot))), color="black", linestyle='--')
-        plt.xlim(-2000, 4000)
-        plt.ylim(-2000, 4000)
+
+        plt.text(min_+300, max_-100, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
+        plt.text(min_+300, max_-500, 'µ = {}'.format(round(fitted_estPlot.params[fitted_estPlot.params.index[1]], 3)),
+                 ha='left', va='center', fontsize=18)
+
+        plt.plot(np.arange(min_, max_), np.arange(min_, max_), color="black")
+        plt.plot(np.unique(x_plot), np.unique(fitted_estPlot.predict(sm.add_constant(x_plot))), color="black",
+                 linestyle='--')
+        plt.xlim(min_, max_)
+        plt.ylim(min_, max_)
         plt.grid(color='k', linestyle='-', linewidth=0.1)
         plt.title(f"Predicted vs. Observed {self.var_Y}, Kernel: {self.kernel}", fontsize=18)
         plt.xlabel(f"Predicted {self.var_Y} [kg/ha]", fontsize=18)
         plt.ylabel(f"Observed {self.var_Y} [kg/ha]", fontsize=18)
 
-        plt.savefig(f'{folder}/KPCA_{self.kernel}_ALLDATA.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/KPCA_{self.kernel}_alldata_{self.var_Y}.png', dpi=300, bbox_inches="tight")
         plt.close()
 
     def _plot_adjusted_predicted_yield(self, y_pred, y, y_adjusted, y_obs, folder):
         # plot adjusted yield
-        Xplot2 = sm.add_constant(y_pred)
-        estPlot = sm.OLS(y, Xplot2)
-        estPlot2 = estPlot.fit()
-        plt.figure(figsize=(10, 8))
-        plt.fill_between(np.unique(y_adjusted), np.unique(estPlot2.predict(sm.add_constant(y_adjusted))) + 450,
-                         np.unique(estPlot2.predict(sm.add_constant(y_adjusted))) - 450, color='yellow', alpha='0.5')
-        plt.scatter(y_adjusted, y_obs, c="red", s=20, edgecolor='k')
-        Xplot2 = sm.add_constant(y_adjusted)
-        estPlot = sm.OLS(y_obs, Xplot2)
-        estPlot2 = estPlot.fit()
-        adj_r2Plot = round(estPlot2.rsquared_adj, 3)
-        plt.text(300, 4500, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
+        xplot2_sm = sm.add_constant(y_pred)
+        est_plot_sm = sm.OLS(y, xplot2_sm)
+        fitted_estplot = est_plot_sm.fit()
 
-        plt.plot(np.arange(0, 5000), np.arange(0, 5000), color="black")
-        plt.plot(np.unique(y_adjusted), np.unique(estPlot2.predict(sm.add_constant(y_adjusted))), color="black",
+        plt.figure(figsize=(10, 8))
+        plt.fill_between(np.unique(y_adjusted), np.unique(fitted_estplot.predict(sm.add_constant(y_adjusted))) + 450,
+                         np.unique(fitted_estplot.predict(sm.add_constant(y_adjusted))) - 450, color='yellow', alpha='0.5')
+        plt.scatter(y_pred, y_obs, c="red", s=20, edgecolor='k')
+        min_ = min(y_pred.min(), y_obs.min())
+        max_ = min(y_pred.max(), y_obs.max())
+
+        xplot2_sm = sm.add_constant(y_adjusted)
+        est_plot_sm = sm.OLS(y_obs, xplot2_sm)
+        fitted_estplot = est_plot_sm.fit()
+        adj_r2Plot = round(fitted_estplot.rsquared_adj, 3)
+
+        plt.text(min_+300, max_-200, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
+        plt.text(min_+300, max_-500, 'µ = {}'.format(round(fitted_estplot.params[fitted_estplot.params.index[1]], 3)), ha='left',
+                 va='center', fontsize=18)
+
+        plt.plot(np.arange(min_, max_), np.arange(min_, max_), color="black")
+        plt.plot(np.unique(y_adjusted), np.unique(fitted_estplot.predict(sm.add_constant(y_adjusted))), color="black",
                  linestyle='--')
-        plt.xlim(0, 5000)
-        plt.ylim(0, 5000)
+        plt.xlim(min_, max_)
+        plt.ylim(min_, max_)
         plt.title("Predicted Yield vs. Observed Yield", fontsize=18)
         plt.xlabel("Predicted Yield [kg/ha]", fontsize=18)
         plt.ylabel("Observed Yield [kg/ha]", fontsize=18)
-        plt.savefig(f'{folder}/KPCA_{self.kernel}_AdjustedYieldUncer.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/KPCA_{self.kernel}_finalPredictedYield.png', dpi=300, bbox_inches="tight")
         plt.close()
 
     def _plot_histogram(self, y_pred, y, folder):
         # %% histogram of er
         a = y_pred - y
 
-        mean = 0
-        std = 150
-        # mean,std=norm.fit(a)
+        mean, std = norm.fit(a)
         x = np.linspace(mean - 3 * std, mean + 3 * std, 100)
 
         bins = np.linspace(-1000, 1000, 100)
@@ -281,7 +306,22 @@ if __name__ == "__main__":
     emulator_model.train_and_plot(f"{PLOT_DIR}/emulator")
 
     emulator_model_irr = KPCAModel(emulator_vars_X, var_y="YieldModel", data=dat_irr)
-    emulator_model_irr.train_and_plot(f"{PLOT_DIR}/emulator")
+    emulator_model_irr.train_and_plot(f"{PLOT_DIR}/emulator_irr")
+
+    no_sdm_model = KPCAModel(default_vars_X, var_y="YieldObs", data=dat)
+    no_sdm_model.train_and_plot(f"{PLOT_DIR}/noSDM")
+
+    no_sdm_model_irr = KPCAModel(default_vars_X, var_y="YieldObs", data=dat_irr)
+    no_sdm_model_irr.train_and_plot(f"{PLOT_DIR}/noSDM_irr")
+
+    avg_obs_yield_model_vars_X = default_vars_X + ["averageObsYield"]
+    dat["averageObsYield"] = dat["YieldObs"].mean()
+    avg_obs_yield_model = KPCAModel(avg_obs_yield_model_vars_X, var_y="YieldObs", data=dat)
+    avg_obs_yield_model.train_and_plot(f"{PLOT_DIR}/averageObsYield")
+
+    dat_irr["averageObsYield"] = dat_irr["YieldObs"].mean()
+    avg_obs_yield_model_irr = KPCAModel(avg_obs_yield_model_vars_X, var_y="YieldObs", data=dat_irr)
+    avg_obs_yield_model_irr.train_and_plot(f"{PLOT_DIR}/averageObsYield_irr")
 
     # %% evaluating benefit
     survey_dat = pd.read_csv(f"{DATA_DIR}/Baseline/Final_Analysis_345_nrh_TijmenData_v4.csv", header=0)
@@ -344,6 +384,7 @@ if __name__ == "__main__":
     plt.savefig(f'{PLOT_DIR}/histYieldIncrease.png', dpi=300, bbox_inches="tight")
     plt.close()
 
+
     # %% hist of yield
     def plot_hist_yield(a, b, title, file):
         bins = np.linspace(0, 5000, 50)
@@ -362,7 +403,8 @@ if __name__ == "__main__":
 
 
     plot_hist_yield(Yield_adj, Yield_adj_irr, 'Histogram of yield', f'{PLOT_DIR}/histYield.png')
-    plot_hist_yield(Yield_adj[Irr_exist], Yield_adj_irr[Irr_exist], 'Histogram of yield (farmers with existing irrigation)', f'{PLOT_DIR}/histYield_existingIrr.png')
+    plot_hist_yield(Yield_adj[Irr_exist], Yield_adj_irr[Irr_exist],
+                    'Histogram of yield (farmers with existing irrigation)', f'{PLOT_DIR}/histYield_existingIrr.png')
 
     # %%
     Xplot_irr = Yield_adj_irr
@@ -379,16 +421,20 @@ if __name__ == "__main__":
                      np.unique(estPlot2.predict(sm.add_constant(Xplot_irr))) - 450, color='yellow', alpha='0.5')
     plt.scatter(Xplot_irr, Yplot, c="red", s=20, edgecolor='k', label='Predicted yield with new ponds')
     plt.scatter(Xplot_noIrr, Yplot, c="blue", s=20, edgecolor='k', label='Predicted yield')
+
     Xplot2 = sm.add_constant(Xplot_irr)
     estPlot = sm.OLS(Yplot, Xplot2)
     estPlot2 = estPlot.fit()
     betaPlot = estPlot2.params
     adj_r2Plot = round(estPlot2.rsquared_adj, 3)
     plt.text(300, 4000, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
+    plt.text(300, 3600, 'µ = {}'.format(round(estPlot2.params[estPlot2.params.index[1]], 3)), ha='left', va='center',
+             fontsize=18)
     # plt.errorbar(Xplot, Yplot,  0, 450, fmt='r^',label='Annual yield per farmer', elinewidth =0.5,
     #               marker='x', markersize='5',markeredgecolor='blue', ecolor=['red'],barsabove=False)
     plt.plot(np.arange(0, 5000), np.arange(0, 5000), color="black")
-    plt.plot(np.unique(Xplot_irr), np.unique(estPlot2.predict(sm.add_constant(Xplot_irr))), color="black", linestyle='--')
+    plt.plot(np.unique(Xplot_irr), np.unique(estPlot2.predict(sm.add_constant(Xplot_irr))), color="black",
+             linestyle='--')
     plt.xlim(0, 5000)
     plt.ylim(0, 5000)
     plt.title("Predicted Yield vs. Observed Yield", fontsize=18)
@@ -420,7 +466,8 @@ if __name__ == "__main__":
     plt.xlim(-3.5, 6)
     # plt.ylim(0,5000)
     plt.grid(color='k', linestyle='-', linewidth=0.1)
-    plt.title("Total Error by Perceived Fertilizer Cost, Pesticide Cost, and Crop Price ({})".format(namePC), fontsize=18)
+    plt.title("Total Error by Perceived Fertilizer Cost, Pesticide Cost, and Crop Price ({})".format(namePC),
+              fontsize=18)
     plt.xlabel("Perceived Fertilizer Cost, Pesticide Cost, and Crop Price ({})".format(namePC), fontsize=18)
     plt.ylabel("Total Error [kg/ha]", fontsize=18)
 
