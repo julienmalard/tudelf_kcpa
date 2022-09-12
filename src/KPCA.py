@@ -36,7 +36,7 @@ def ns_log(pred, obs):
 
 
 class KPCAModel(object):
-    def __init__(self, vars_x, var_y, data, kernel="sigmoid"):
+    def __init__(self, vars_x, var_y, data, kernel="rbf"):
         self.vars_X = vars_x
         self.var_Y = var_y
         self.data = data
