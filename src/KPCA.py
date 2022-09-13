@@ -36,12 +36,12 @@ def ns_log(pred, obs):
 
 
 class KPCAModel(object):
-    def __init__(self, vars_x, var_y, data, kernel="rbf"):
+    def __init__(self, vars_x, var_y, data, kernel="rbf",deg=None):
         self.vars_X = vars_x
         self.var_Y = var_y
         self.data = data
         self.kernel = kernel
-        self.deg = 5
+        self.deg = deg
 
         self.y_pred_all = None
 
@@ -74,6 +74,7 @@ class KPCAModel(object):
         fitted_est = est.fit()
         pval = fitted_est.pvalues
         idx_est = tuple(np.where(pval < 0.05)[0])
+        idx_est = idx_est[1:]
 
         x_model_significant = x_train[:, idx_est]
         x2_significant = sm.add_constant(x_model_significant)
@@ -182,7 +183,7 @@ class KPCAModel(object):
         plt.xlabel(f"Predicted {self.var_Y} [kg/ha]", fontsize=18)
         plt.ylabel(f"Observed {self.var_Y} [kg/ha]", fontsize=18)
         plt.grid(color='k', linestyle='-', linewidth=0.1)
-        plt.savefig(f'{folder}/KPCA_{self.kernel}_validate_{self.var_Y}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/KPCA_{self.kernel}_validate_{self.var_Y}_deg{self.deg}.png', dpi=300, bbox_inches="tight")
         plt.close()
 
     def _plot_alldata(self, y_pred, y, folder):
@@ -212,7 +213,7 @@ class KPCAModel(object):
         plt.xlabel(f"Predicted {self.var_Y} [kg/ha]", fontsize=18)
         plt.ylabel(f"Observed {self.var_Y} [kg/ha]", fontsize=18)
 
-        plt.savefig(f'{folder}/KPCA_{self.kernel}_alldata_{self.var_Y}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/KPCA_{self.kernel}_alldata_{self.var_Y}_deg{self.deg}.png', dpi=300, bbox_inches="tight")
         plt.close()
 
     def _plot_adjusted_predicted_yield(self, y_pred, y_obs, folder):
@@ -244,12 +245,12 @@ class KPCAModel(object):
         plt.title("Predicted Yield vs. Observed Yield", fontsize=18)
         plt.xlabel("Predicted Yield [kg/ha]", fontsize=18)
         plt.ylabel("Observed Yield [kg/ha]", fontsize=18)
-        plt.savefig(f'{folder}/KPCA_{self.kernel}_finalPredictedYield.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/KPCA_{self.kernel}_finalPredictedYield_deg{self.deg}.png', dpi=300, bbox_inches="tight")
         plt.close()
 
     def _plot_histogram(self, y_pred, y, folder):
         # %% histogram of er
-        a = y_pred - y
+        a = y - y_pred
 
         mean, std = norm.fit(a)
         x = np.linspace(mean - 3 * std, mean + 3 * std, 100)
@@ -264,12 +265,12 @@ class KPCAModel(object):
         plt.xlabel('Residual error ($\epsilon_r$) [kg/ha]', fontsize=18)
         plt.ylabel('Probability', fontsize=18)
         plt.legend()
-        plt.savefig(f'{folder}/HistEr.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/HistEr_{self.kernel}_deg{self.deg}.png', dpi=300, bbox_inches="tight")
         plt.close()
 
 
 if __name__ == "__main__":
-    dat = pd.read_excel(f"{DATA_DIR}/KPCA/KPCA_dat_adj.xlsx", header=0)
+    dat = pd.read_excel(f"{DATA_DIR}/KPCA/KPCA_dat_adj_withCosts.xlsx", header=0)
     dat_irr = pd.read_excel(f"{DATA_DIR}/KPCA/KPCA_dat_adj_irr.xlsx", header=0)
 
     default_vars_X = [
@@ -296,11 +297,13 @@ if __name__ == "__main__":
     modelyield_model_irr = KPCAModel(modelyield_vars_X, var_y="YieldDiff", data=dat_irr)
     modelyield_model_irr.train_and_plot(f"{PLOT_DIR}/modelYield_irr")
 
-    emulator_vars_X = default_vars_X
-    emulator_model = KPCAModel(emulator_vars_X, var_y="YieldModel", data=dat)
+#%%
+    emulator_vars_X = default_vars_X+["PestCost","FertCost"]
+    emulator_model = KPCAModel(emulator_vars_X, var_y="YieldModel", data=dat, kernel="poly", deg=5)
     emulator_model.train_and_plot(f"{PLOT_DIR}/emulator")
-
-    emulator_model_irr = KPCAModel(emulator_vars_X, var_y="YieldModel", data=dat_irr)
+#%%
+    
+    emulator_model_irr = KPCAModel(default_vars_X, var_y="YieldModel", data=dat_irr)
     emulator_model_irr.train_and_plot(f"{PLOT_DIR}/emulator_irr")
 
     no_sdm_model = KPCAModel(default_vars_X, var_y="YieldObs", data=dat)
@@ -317,6 +320,11 @@ if __name__ == "__main__":
     dat_irr["averageObsYield"] = dat_irr["YieldObs"].mean()
     avg_obs_yield_model_irr = KPCAModel(avg_obs_yield_model_vars_X, var_y="YieldObs", data=dat_irr)
     avg_obs_yield_model_irr.train_and_plot(f"{PLOT_DIR}/averageObsYield_irr")
+
+#%%
+    WithCostsModelYieldNoPriceObsYield_vars_X=default_vars_X+["PestCost","FertCost","YieldModel"]
+    WithCostsModelYieldNoPriceObsYield_model = KPCAModel(WithCostsModelYieldNoPriceObsYield_vars_X, var_y="YieldDiff", data=dat, kernel="rbf", deg=None)
+    WithCostsModelYieldNoPriceObsYield_model.train_and_plot(f"{PLOT_DIR}/WithCostsModelYieldNoPriceObsYield")
 
     # %% evaluating benefit
     survey_dat = pd.read_csv(f"{DATA_DIR}/Baseline/Final_Analysis_345_nrh_TijmenData_v4.csv", header=0)
