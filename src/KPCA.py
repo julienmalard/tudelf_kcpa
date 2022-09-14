@@ -49,17 +49,18 @@ class KPCAModel(object):
         if not os.path.isdir(folder):
             os.makedirs(folder)
 
-        x = StandardScaler().fit_transform(self.data[self.vars_X])
-        y = self.data[self.var_Y]
-
-        # split training and test data
-        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.25, random_state=1)
-
         # Running KPCA
         for kernel in self.kernels:
             degs = range(1, 6) if kernel == "poly" else [None]
             for deg in degs:
                 print("kernel", kernel, "deg", deg)
+
+                x = StandardScaler().fit_transform(self.data[self.vars_X])
+                y = self.data[self.var_Y]
+
+                # split training and test data
+                x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.25, random_state=1)
+
                 kpca = KernelPCA(kernel=kernel, fit_inverse_transform=True, n_components=None, degree=deg)
                 x_train = kpca.fit_transform(x_train)
                 x_test = kpca.transform(x_test)
