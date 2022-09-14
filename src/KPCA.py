@@ -36,13 +36,13 @@ def ns_log(pred, obs):
 
 
 class KPCAModel(object):
-    def __init__(self, vars_x, var_y, data, kernel="rbf",deg=None):
+    def __init__(self, vars_x, var_y, data, kernels=None):
         self.vars_X = vars_x
         self.var_Y = var_y
         self.data = data
-        self.kernel = kernel
-        self.deg = deg
+        self.kernels = kernels or ["rbf", "sigmoid", "poly"]
 
+        self.best = {}
         self.y_pred_all = None
 
     def train_and_plot(self, folder=PLOT_DIR):
@@ -56,59 +56,94 @@ class KPCAModel(object):
         x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.25, random_state=1)
 
         # Running KPCA
-        kpca = KernelPCA(kernel=self.kernel, fit_inverse_transform=True, n_components=None, degree=self.deg)
-        x_train = kpca.fit_transform(x_train)
-        x_test = kpca.transform(x_test)
+        for kernel in self.kernels:
+            degs = range(1, 6) if kernel == "poly" else [None]
+            for deg in degs:
+                print("kernel", kernel, "deg", deg)
+                kpca = KernelPCA(kernel=kernel, fit_inverse_transform=True, n_components=None, degree=deg)
+                x_train = kpca.fit_transform(x_train)
+                x_test = kpca.transform(x_test)
 
-        d = kpca.lambdas_
-        d_cumsum = np.cumsum(d)
-        var_explained = d_cumsum / np.sum(d)
-        n_count = sum(var_explained <= 0.90) + 1
+                d = kpca.lambdas_
+                d_cumsum = np.cumsum(d)
+                var_explained = d_cumsum / np.sum(d)
+                n_count = sum(var_explained <= 0.90) + 1
 
-        self._plot_variance_explained(var_explained, n_count, folder)
+                # fitting model with significant pval
+                x_model = x_train[:, 1:n_count + 1]
+                X2 = sm.add_constant(x_model)
+                est = sm.OLS(y_train, X2)
+                fitted_est = est.fit()
+                pval = fitted_est.pvalues
+                idx_est = tuple(np.where(pval < 0.05)[0])
+                idx_est = idx_est[1:]
 
-        # fitting model with significant pval
-        x_model = x_train[:, 1:n_count + 1]
-        X2 = sm.add_constant(x_model)
-        est = sm.OLS(y_train, X2)
-        fitted_est = est.fit()
-        pval = fitted_est.pvalues
-        idx_est = tuple(np.where(pval < 0.05)[0])
-        idx_est = idx_est[1:]
+                x_model_significant = x_train[:, idx_est]
+                x2_significant = sm.add_constant(x_model_significant)
+                est_significant = sm.OLS(y_train, x2_significant)
+                fitted_est_significant = est_significant.fit()
+                print(fitted_est_significant.summary())
+                y_pred_train = fitted_est_significant.predict(x2_significant)
 
-        x_model_significant = x_train[:, idx_est]
-        x2_significant = sm.add_constant(x_model_significant)
-        est_significant = sm.OLS(y_train, x2_significant)
-        fitted_est_significant = est_significant.fit()
-        print(fitted_est_significant.summary())
-        y_pred_train = fitted_est_significant.predict(x2_significant)
+                # predict
+                x2_test = sm.add_constant(x_test[:, idx_est])  # sigmoid
+                y_pred_test = fitted_est_significant.predict(x2_test)
 
-        self._plot_kpca_summary(fitted_est_significant.summary(), folder)
+                # evaluate
+                mae_train = mae(y_pred_train, y_train)
+                ns_train = ns(y_pred_train, y_train)
+                nslog_train = ns_log(y_pred_train, y_train)
 
-        print(f'MAE of {self.kernel} Kernel PCA Train: {mae(y_pred_train, y_train)} [kg/ha]')
-        print(f'NS of {self.kernel} Kernel PCA Train: {ns(y_pred_train, y_train)} [kg/ha]')
-        print(f'NS log of {self.kernel} Kernel PCA Train: {ns_log(y_pred_train, y_train)} [kg/ha]')
+                mae_test = mae(y_pred_test, y_test)
+                ns_test = ns(y_pred_test, y_test)
+                nslog_test = ns_log(y_pred_test, y_test)
 
-        # predict
-        x2_test = sm.add_constant(x_test[:, idx_est])  # sigmoid
-        y_pred_test = fitted_est_significant.predict(x2_test)
+                better = not self.best or ns_test > self.best["ns_test"]
 
-        print(f'MAE of {self.kernel} Kernel PCA Test: {mae(y_pred_test, y_test)} [kg/ha]')
-        print(f'NS of {self.kernel} Kernel PCA Test: {ns(y_pred_test, y_test)} [kg/ha]')
-        print(f'NS log of {self.kernel} Kernel PCA Test: {ns_log(y_pred_test, y_test)} [kg/ha]')
+                if better:
+                    self.best = {
+                        "kpca": kpca,
 
-        self._plot_testdata_kpca(y_pred_test, y_test, folder)
+                        "kernel": kernel,
+                        "deg": deg,
+                        "n_count": n_count,
+                        "idx_est": idx_est,
+                        "var_explained": var_explained,
+                        "fitted_est_significant": fitted_est_significant,
+                        "y_pred_test": y_pred_test,
+
+                        "mae_train": mae_train,
+                        "ns_train": ns_train,
+                        "nslog_train": nslog_train,
+                        "mae_test": mae_test,
+                        "ns_test": ns_test,
+                        "nslog_test": nslog_test
+                    }
+
+        self._plot_variance_explained(self.best["var_explained"], self.best['n_count'], folder)
+        self._plot_kpca_summary(self.best['fitted_est_significant'].summary(), folder)
+
+        print(f'MAE of {self.best["kernel"]} Kernel PCA Train: {self.best["mae_train"]} [kg/ha]')
+        print(f'NS of {self.best["kernel"]} Kernel PCA Train: {self.best["ns_train"]} [kg/ha]')
+        print(f'NS log of {self.best["kernel"]} Kernel PCA Train: {self.best["nslog_train"]} [kg/ha]')
+
+        print(f'MAE of {self.best["kernel"]} Kernel PCA Test: {self.best["mae_test"]} [kg/ha]')
+        print(f'NS of {self.best["kernel"]} Kernel PCA Test: {self.best["ns_test"]} [kg/ha]')
+        print(f'NS log of {self.best["kernel"]} Kernel PCA Test: {self.best["nslog_test"]} [kg/ha]')
+
+        self._plot_testdata_kpca(self.best["y_pred_test"], y_test, folder)
 
         # ################################## KPCA ALL DATA ##############################################
         # transform all data and estimate them
-        x_all = kpca.transform(x)
+        x_all = self.best["kpca"].transform(x)
         x2_all = sm.add_constant(
-            x_all[:, idx_est])  # components cumulative to >90% variance and significant in regression model
-        self.y_pred_all = y_pred_all = fitted_est_significant.predict(x2_all)
+            x_all[:, self.best["idx_est"]]
+        )  # components cumulative to >90% variance and significant in regression model
+        self.y_pred_all = y_pred_all = self.best["fitted_est_significant"].predict(x2_all)
 
-        print(f'MAE of {self.kernel} Kernel PCA Test: {mae(y_pred_all, y)} [kg/ha]')
-        print(f'NS of {self.kernel} Kernel PCA Test: {ns(y_pred_all, y)} [-]')
-        print(f'NS log of {self.kernel} Kernel PCA Test: {ns_log(y_pred_all, y)} [-]')
+        print(f'MAE of {self.best["kernel"]} Kernel PCA Test: {mae(y_pred_all, y)} [kg/ha]')
+        print(f'NS of {self.best["kernel"]} Kernel PCA Test: {ns(y_pred_all, y)} [-]')
+        print(f'NS log of {self.best["kernel"]} Kernel PCA Test: {ns_log(y_pred_all, y)} [-]')
         self._plot_alldata(y_pred_all, y, folder=folder)
 
         # Hack for also predicting final yield when predictand is yield difference
@@ -119,9 +154,9 @@ class KPCAModel(object):
 
             yield_obs = self.data["YieldObs"]
 
-            print(f'MAE of {self.kernel} Predicted Yield: {mae(yield_adj, yield_obs)} [kg/ha]')
-            print(f'NS of {self.kernel} Predicted Yield: {ns(yield_adj, yield_obs)} [-]')
-            print(f'NS log of {self.kernel} Predicted Yield: {ns_log(yield_adj, yield_obs)} [-]')
+            print(f'MAE of {self.best["kernel"]} Predicted Yield: {mae(yield_adj, yield_obs)} [kg/ha]')
+            print(f'NS of {self.best["kernel"]} Predicted Yield: {ns(yield_adj, yield_obs)} [-]')
+            print(f'NS log of {self.best["kernel"]} Predicted Yield: {ns_log(yield_adj, yield_obs)} [-]')
             self._plot_adjusted_predicted_yield(yield_adj, yield_obs, folder=folder)
 
         self._plot_histogram(y_pred_all, y, folder=folder)
@@ -140,11 +175,11 @@ class KPCAModel(object):
         plt.text(n_count + 1, 0.5, 'Number of PCs to explain >90% variance: {}'.format(n_count), ha='left', va='center',
                  fontsize=18)
         plt.text(-5, 0.9, 'var=0.9', ha='left', va='center')
-        plt.title("Variance Explained, Kernel: {}".format(self.kernel), fontsize=18)
+        plt.title("Variance Explained, Kernel: {}".format(self.best["kernel"]), fontsize=18)
         plt.xlabel("Principal Components in Feature Space", fontsize=18)
         plt.ylabel("Variance Explained [-]", fontsize=18)
 
-        plt.savefig(f'{folder}/varExplained_{self.kernel}_deg{self.deg}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/varExplained_{self.best["kernel"]}_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
         plt.close()
 
     def _plot_kpca_summary(self, summary, folder):
@@ -154,7 +189,7 @@ class KPCAModel(object):
         plt.axis('off')
         plt.tight_layout()
 
-        plt.savefig(f'{folder}/KPCA_Summary_{self.kernel}_deg{self.deg}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/KPCA_Summary_{self.best["kernel"]}_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
         plt.close()
 
     def _plot_testdata_kpca(self, y_pred, y_test, folder):
@@ -170,8 +205,9 @@ class KPCAModel(object):
         fitted_estplot = sm.OLS(y_plot, sm.add_constant(x_plot)).fit()
 
         adj_r2Plot = round(fitted_estplot.rsquared_adj, 3)
-        plt.text(min_+300, max_-300, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
-        plt.text(min_+300, max_-500, 'µ = {}'.format(round(fitted_estplot.params[fitted_estplot.params.index[1]], 3)), ha='left',
+        plt.text(min_ + 300, max_ - 300, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
+        plt.text(min_ + 300, max_ - 500,
+                 'µ = {}'.format(round(fitted_estplot.params[fitted_estplot.params.index[1]], 3)), ha='left',
                  va='center', fontsize=18)
 
         plt.plot(np.arange(min_, max_), np.arange(min_, max_), color="black")
@@ -179,11 +215,12 @@ class KPCAModel(object):
                  linestyle='--')
         plt.xlim(min_, max_)
         plt.ylim(min_, max_)
-        plt.title(f"Predicted vs. Observed {self.var_Y}, Kernel: {self.kernel} (test data)", fontsize=18)
+        plt.title(f"Predicted vs. Observed {self.var_Y}, Kernel: {self.best['kernel']} (test data)", fontsize=18)
         plt.xlabel(f"Predicted {self.var_Y} [kg/ha]", fontsize=18)
         plt.ylabel(f"Observed {self.var_Y} [kg/ha]", fontsize=18)
         plt.grid(color='k', linestyle='-', linewidth=0.1)
-        plt.savefig(f'{folder}/KPCA_{self.kernel}_validate_{self.var_Y}_deg{self.deg}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/KPCA_{self.best["kernel"]}_validate_{self.var_Y}_deg{self.best["deg"]}.png', dpi=300,
+                    bbox_inches="tight")
         plt.close()
 
     def _plot_alldata(self, y_pred, y, folder):
@@ -200,7 +237,8 @@ class KPCAModel(object):
         adj_r2_plot = round(fitted_est_plot.rsquared_adj, 3)
 
         plt.text(min_ + 300, max_ - 100, '$r^2$ = {}'.format(adj_r2_plot), ha='left', va='center', fontsize=18)
-        plt.text(min_+300, max_-500, 'µ = {}'.format(round(fitted_est_plot.params[fitted_est_plot.params.index[1]], 3)),
+        plt.text(min_ + 300, max_ - 500,
+                 'µ = {}'.format(round(fitted_est_plot.params[fitted_est_plot.params.index[1]], 3)),
                  ha='left', va='center', fontsize=18)
 
         plt.plot(np.arange(min_, max_), np.arange(min_, max_), color="black")
@@ -209,11 +247,11 @@ class KPCAModel(object):
         plt.xlim(min_, max_)
         plt.ylim(min_, max_)
         plt.grid(color='k', linestyle='-', linewidth=0.1)
-        plt.title(f"Predicted vs. Observed {self.var_Y}, Kernel: {self.kernel}", fontsize=18)
+        plt.title(f"Predicted vs. Observed {self.var_Y}, Kernel: {self.best['kernel']}", fontsize=18)
         plt.xlabel(f"Predicted {self.var_Y} [kg/ha]", fontsize=18)
         plt.ylabel(f"Observed {self.var_Y} [kg/ha]", fontsize=18)
 
-        plt.savefig(f'{folder}/KPCA_{self.kernel}_alldata_{self.var_Y}_deg{self.deg}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/KPCA_{self.best["kernel"]}_alldata_{self.var_Y}_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
         plt.close()
 
     def _plot_adjusted_predicted_yield(self, y_pred, y_obs, folder):
@@ -233,8 +271,9 @@ class KPCAModel(object):
         fitted_estplot = est_plot_sm.fit()
         adj_r2Plot = round(fitted_estplot.rsquared_adj, 3)
 
-        plt.text(min_+300, max_-200, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
-        plt.text(min_+300, max_-500, 'µ = {}'.format(round(fitted_estplot.params[fitted_estplot.params.index[1]], 3)), ha='left',
+        plt.text(min_ + 300, max_ - 200, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
+        plt.text(min_ + 300, max_ - 500,
+                 'µ = {}'.format(round(fitted_estplot.params[fitted_estplot.params.index[1]], 3)), ha='left',
                  va='center', fontsize=18)
 
         plt.plot(np.arange(min_, max_), np.arange(min_, max_), color="black")
@@ -245,7 +284,7 @@ class KPCAModel(object):
         plt.title("Predicted Yield vs. Observed Yield", fontsize=18)
         plt.xlabel("Predicted Yield [kg/ha]", fontsize=18)
         plt.ylabel("Observed Yield [kg/ha]", fontsize=18)
-        plt.savefig(f'{folder}/KPCA_{self.kernel}_finalPredictedYield_deg{self.deg}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/KPCA_{self.best["kernel"]}_finalPredictedYield_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
         plt.close()
 
     def _plot_histogram(self, y_pred, y, folder):
@@ -265,7 +304,7 @@ class KPCAModel(object):
         plt.xlabel('Residual error ($\epsilon_r$) [kg/ha]', fontsize=18)
         plt.ylabel('Probability', fontsize=18)
         plt.legend()
-        plt.savefig(f'{folder}/HistEr_{self.kernel}_deg{self.deg}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/HistEr_{self.best["kernel"]}_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
         plt.close()
 
 
@@ -297,12 +336,10 @@ if __name__ == "__main__":
     modelyield_model_irr = KPCAModel(modelyield_vars_X, var_y="YieldDiff", data=dat_irr)
     modelyield_model_irr.train_and_plot(f"{PLOT_DIR}/modelYield_irr")
 
-#%%
-    emulator_vars_X = default_vars_X+["PestCost","FertCost"]
-    emulator_model = KPCAModel(emulator_vars_X, var_y="YieldModel", data=dat, kernel="poly", deg=5)
+    emulator_vars_X = default_vars_X + ["PestCost", "FertCost"]
+    emulator_model = KPCAModel(emulator_vars_X, var_y="YieldModel", data=dat)
     emulator_model.train_and_plot(f"{PLOT_DIR}/emulator")
-#%%
-    
+
     emulator_model_irr = KPCAModel(default_vars_X, var_y="YieldModel", data=dat_irr)
     emulator_model_irr.train_and_plot(f"{PLOT_DIR}/emulator_irr")
 
@@ -321,9 +358,9 @@ if __name__ == "__main__":
     avg_obs_yield_model_irr = KPCAModel(avg_obs_yield_model_vars_X, var_y="YieldObs", data=dat_irr)
     avg_obs_yield_model_irr.train_and_plot(f"{PLOT_DIR}/averageObsYield_irr")
 
-#%%
-    WithCostsModelYieldNoPriceObsYield_vars_X=default_vars_X+["PestCost","FertCost","YieldModel"]
-    WithCostsModelYieldNoPriceObsYield_model = KPCAModel(WithCostsModelYieldNoPriceObsYield_vars_X, var_y="YieldDiff", data=dat, kernel="rbf", deg=None)
+    WithCostsModelYieldNoPriceObsYield_vars_X = default_vars_X + ["PestCost", "FertCost", "YieldModel"]
+    WithCostsModelYieldNoPriceObsYield_model = KPCAModel(WithCostsModelYieldNoPriceObsYield_vars_X, var_y="YieldDiff",
+                                                         data=dat)
     WithCostsModelYieldNoPriceObsYield_model.train_and_plot(f"{PLOT_DIR}/WithCostsModelYieldNoPriceObsYield")
 
     # %% evaluating benefit
@@ -417,7 +454,6 @@ if __name__ == "__main__":
     Xplot2 = sm.add_constant(Xplot_irr)
     estPlot = sm.OLS(Yplot, Xplot2)
     estPlot2 = estPlot.fit()
-    betaPlot = estPlot2.params
 
     plt.figure(figsize=(10, 8))
     plt.fill_between(np.unique(Xplot_irr), np.unique(estPlot2.predict(sm.add_constant(Xplot_irr))) + 450,
