@@ -293,9 +293,10 @@ class KPCAModel(object):
         a = y - y_pred
 
         mean, std = norm.fit(a)
+        print("mean", mean, a.mean())
         x = np.linspace(mean - 3 * std, mean + 3 * std, 100)
 
-        bins = np.linspace(-1000, 1000, 100)
+        bins = np.linspace(min(a.min(), mean - 3 * std), max(a.max(), mean + 3 * std), 100)
         labels = ['$\epsilon_r$']
 
         plt.figure(figsize=(12, 7))
