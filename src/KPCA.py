@@ -4,6 +4,7 @@ Created on Wed Mar 31 13:35:17 2021
 
 @author: denni
 """
+import math
 import os
 
 import matplotlib.pyplot as plt
@@ -13,7 +14,7 @@ import scipy.stats as stats
 import statsmodels.api as sm
 from scipy.stats import norm
 from sklearn.decomposition import KernelPCA
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import HuberRegressor, LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -113,6 +114,9 @@ class KPCAModel(object):
                         "fitted_est_significant": fitted_est_significant,
                         "y_pred_test": y_pred_test,
 
+                        "pc_train": x_model_significant,
+                        "pc_test": x2_test,
+
                         "mae_train": mae_train,
                         "ns_train": ns_train,
                         "nslog_train": nslog_train,
@@ -141,6 +145,8 @@ class KPCAModel(object):
             x_all[:, self.best["idx_est"]]
         )  # components cumulative to >90% variance and significant in regression model
         self.y_pred_all = y_pred_all = self.best["fitted_est_significant"].predict(x2_all)
+
+        self._plot_pc_vs_error(x_all[:, self.best["idx_est"]], self.y_pred_all, y, folder=folder)
 
         print(f'MAE of {self.best["kernel"]} Kernel PCA Test: {mae(y_pred_all, y)} [kg/ha]')
         print(f'NS of {self.best["kernel"]} Kernel PCA Test: {ns(y_pred_all, y)} [-]')
@@ -262,7 +268,7 @@ class KPCAModel(object):
 
         plt.figure(figsize=(10, 8))
         plt.fill_between(np.unique(y_pred), np.unique(fitted_estplot.predict(sm.add_constant(y_pred))) + 450,
-                         np.unique(fitted_estplot.predict(sm.add_constant(y_pred))) - 450, color='yellow', alpha='0.5')
+                         np.unique(fitted_estplot.predict(sm.add_constant(y_pred))) - 450, color='yellow', alpha=0.5)
         plt.scatter(y_pred, y_obs, c="red", s=20, edgecolor='k')
         min_ = min(y_pred.min(), y_obs.min())
         max_ = max(y_pred.max(), y_obs.max())
@@ -286,6 +292,29 @@ class KPCAModel(object):
         plt.xlabel("Predicted Yield [kg/ha]", fontsize=18)
         plt.ylabel("Observed Yield [kg/ha]", fontsize=18)
         plt.savefig(f'{folder}/KPCA_{self.best["kernel"]}_finalPredictedYield_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
+        plt.close()
+
+    def _plot_pc_vs_error(self, pcs, pred, obs, folder: str):
+        n_pcs = pcs.shape[1]
+        error = (pred-obs).values
+        fig, axes = plt.subplots(math.ceil(n_pcs/2), 2, figsize=(15,17))
+        for i in range(n_pcs):
+            pc = pcs[..., i]
+            ax = axes.flatten()[i]
+            print(ax)
+            ax.scatter(pc, error, c="red",s=20, edgecolor='k')
+            plotfit = np.arange(pc.min(), pc.max(), 0.5)
+            fit = np.poly1d(np.polyfit(pc, error, 1))
+            model = LinearRegression().fit(pc.reshape(-1, 1), error.reshape(-1, 1))
+            adj_r2Plot = round(model.score(pc.reshape(-1, 1), error.reshape(-1, 1)), 3)
+
+            ax.plot(plotfit, fit(plotfit), color="black", linestyle='--', linewidth=2)
+
+            ax.set_title('PC {} $r^2$ = {}'.format(i + 1, adj_r2Plot))
+
+        fig.suptitle('Total Error by Principal Components')
+        fig.supylabel('Total error')
+        plt.savefig(f'{folder}/PC_vs_error_{self.best["kernel"]}_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
         plt.close()
 
     def _plot_histogram(self, y_pred, y, folder):
@@ -315,7 +344,9 @@ if __name__ == "__main__":
     dat_irr = pd.read_excel(f"{DATA_DIR}/KPCA/KPCA_dat_adj_irr.xlsx", header=0)
 
     default_vars_X = [
-        "AreaCot", "ChildrenHelp", "Evap", "FertAmount", "Irr", "Lat", "Long", "Prec", "SeedsCost", "SoilDepth"
+        "AreaCot", "ChildrenHelp", "Evap", "FertAmount", "Irr",
+        "Lat", "Long", ""
+        "Prec", "SeedsCost", "SoilDepth"
     ]
 
     obsYield_vars_X = default_vars_X + ["YieldObs"]
@@ -459,7 +490,7 @@ if __name__ == "__main__":
 
     plt.figure(figsize=(10, 8))
     plt.fill_between(np.unique(Xplot_irr), np.unique(estPlot2.predict(sm.add_constant(Xplot_irr))) + 450,
-                     np.unique(estPlot2.predict(sm.add_constant(Xplot_irr))) - 450, color='yellow', alpha='0.5')
+                     np.unique(estPlot2.predict(sm.add_constant(Xplot_irr))) - 450, color='yellow', alpha=0.5)
     plt.scatter(Xplot_irr, Yplot, c="red", s=20, edgecolor='k', label='Predicted yield with new ponds')
     plt.scatter(Xplot_noIrr, Yplot, c="blue", s=20, edgecolor='k', label='Predicted yield')
 
@@ -498,7 +529,7 @@ if __name__ == "__main__":
     plt.scatter(Xplot, Yplot, c="red", s=20, edgecolor='k')
 
     fit = np.poly1d(np.polyfit(Xplot, Yplot, 1))
-    model = LinearRegression().fit(Xplot.reshape(-1, 1), Yplot.reshape(-1, 1))
+    model = HuberRegressor().fit(Xplot.reshape(-1, 1), Yplot.reshape(-1, 1))
     adj_r2Plot = round(model.score(Xplot.reshape(-1, 1), Yplot.reshape(-1, 1)), 3)
 
     plt.text(min(Xplot) + 6, max(Yplot), '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)

@@ -7,7 +7,7 @@ authors = ["Dennis Djohan, Julien Malard-Adam <julien.malard@mail.mcgill.ca>"]
 [tool.poetry.dependencies]
 python = "^3.7.13"
 scikit-learn = "0.21.2"
-matplotlib = "3.1.0"
+matplotlib = "3.4.0"
 pandas = {extras = ["xlrd"], version = "^1.2.4"}
 statsmodels = "0.12.2"
 openpyxl = "^3.0.10"
