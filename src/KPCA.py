@@ -14,7 +14,7 @@ import scipy.stats as stats
 import statsmodels.api as sm
 from scipy.stats import norm
 from sklearn.decomposition import KernelPCA
-from sklearn.linear_model import HuberRegressor, LinearRegression
+from sklearn.linear_model import HuberRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
@@ -74,7 +74,7 @@ class KPCAModel(object):
                 # fitting model with significant pval
                 x_model = x_train[:, 1:n_count + 1]
                 X2 = sm.add_constant(x_model)
-                est = sm.OLS(y_train, X2)
+                est = sm.RLM(y_train, X2, M=sm.robust.norms.HuberT())
                 fitted_est = est.fit()
                 pval = fitted_est.pvalues
                 idx_est = tuple(np.where(pval < 0.05)[0])
@@ -82,7 +82,7 @@ class KPCAModel(object):
 
                 x_model_significant = x_train[:, idx_est]
                 x2_significant = sm.add_constant(x_model_significant)
-                est_significant = sm.OLS(y_train, x2_significant)
+                est_significant = sm.RLM(y_train, x2_significant, M=sm.robust.norms.HuberT())
                 fitted_est_significant = est_significant.fit()
                 print(fitted_est_significant.summary())
                 y_pred_train = fitted_est_significant.predict(x2_significant)
@@ -209,9 +209,9 @@ class KPCAModel(object):
         min_ = min(x_plot.min(), y_plot.min())
         max_ = max(x_plot.max(), y_plot.max())
 
-        fitted_estplot = sm.OLS(y_plot, sm.add_constant(x_plot)).fit()
-
-        adj_r2Plot = round(fitted_estplot.rsquared_adj, 3)
+        fitted_estplot = sm.RLM(y_plot, sm.add_constant(x_plot), M=sm.robust.norms.HuberT()).fit()
+        rsquared_adj = sm.OLS(y_plot, sm.add_constant(x_plot)).fit().rsquared_adj
+        adj_r2Plot = round(rsquared_adj, 3)
         plt.text(min_ + 300, max_ - 300, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
         plt.text(min_ + 300, max_ - 500,
                  'µ = {}'.format(round(fitted_estplot.params[fitted_estplot.params.index[1]], 3)), ha='left',
@@ -240,8 +240,9 @@ class KPCAModel(object):
         min_ = min(x_plot.min(), y_plot.min())
         max_ = max(x_plot.max(), y_plot.max())
 
-        fitted_est_plot = sm.OLS(y_plot, sm.add_constant(x_plot)).fit()
-        adj_r2_plot = round(fitted_est_plot.rsquared_adj, 3)
+        fitted_est_plot = sm.RLM(y_plot, sm.add_constant(x_plot), M=sm.robust.norms.HuberT()).fit()
+        rsquared_adj = sm.OLS(y_plot, sm.add_constant(x_plot)).fit().rsquared_adj
+        adj_r2_plot = round(rsquared_adj, 3)
 
         plt.text(min_ + 300, max_ - 100, '$r^2$ = {}'.format(adj_r2_plot), ha='left', va='center', fontsize=18)
         plt.text(min_ + 300, max_ - 500,
@@ -264,7 +265,7 @@ class KPCAModel(object):
     def _plot_adjusted_predicted_yield(self, y_pred, y_obs, folder):
         print("range yield obs: ", y_obs.min(), y_obs.max())
         # plot adjusted yield
-        fitted_estplot = sm.OLS(y_obs, sm.add_constant(y_pred)).fit()
+        fitted_estplot = sm.RLM(y_obs, sm.add_constant(y_pred), M=sm.robust.norms.HuberT()).fit()
 
         plt.figure(figsize=(10, 8))
         plt.fill_between(np.unique(y_pred), np.unique(fitted_estplot.predict(sm.add_constant(y_pred))) + 450,
@@ -274,9 +275,10 @@ class KPCAModel(object):
         max_ = max(y_pred.max(), y_obs.max())
 
         xplot2_sm = sm.add_constant(y_pred)
-        est_plot_sm = sm.OLS(y_obs, xplot2_sm)
+        est_plot_sm = sm.RLM(y_obs, xplot2_sm, M=sm.robust.norms.HuberT())
         fitted_estplot = est_plot_sm.fit()
-        adj_r2Plot = round(fitted_estplot.rsquared_adj, 3)
+        rsquared_adj = sm.OLS(y_obs, xplot2_sm).fit().rsquared_adj
+        adj_r2Plot = round(rsquared_adj, 3)
 
         plt.text(min_ + 300, max_ - 200, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
         plt.text(min_ + 300, max_ - 500,
@@ -295,6 +297,7 @@ class KPCAModel(object):
         plt.close()
 
     def _plot_pc_vs_error(self, pcs, pred, obs, folder: str):
+        self._plot_pc_vs_obs(pcs, obs, folder=folder)
         n_pcs = pcs.shape[1]
         error = (pred-obs).values
         fig, axes = plt.subplots(math.ceil(n_pcs/2), 2, figsize=(15,17))
@@ -305,7 +308,7 @@ class KPCAModel(object):
             ax.scatter(pc, error, c="red",s=20, edgecolor='k')
             plotfit = np.arange(pc.min(), pc.max(), 0.5)
             fit = np.poly1d(np.polyfit(pc, error, 1))
-            model = LinearRegression().fit(pc.reshape(-1, 1), error.reshape(-1, 1))
+            model = HuberRegressor().fit(pc.reshape(-1, 1), error.reshape(-1, 1))
             adj_r2Plot = round(model.score(pc.reshape(-1, 1), error.reshape(-1, 1)), 3)
 
             ax.plot(plotfit, fit(plotfit), color="black", linestyle='--', linewidth=2)
@@ -315,6 +318,29 @@ class KPCAModel(object):
         fig.suptitle('Total Error by Principal Components')
         fig.supylabel('Total error')
         plt.savefig(f'{folder}/PC_vs_error_{self.best["kernel"]}_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
+        plt.close()
+
+    def _plot_pc_vs_obs(self, pcs, obs, folder: str):
+        n_pcs = pcs.shape[1]
+        y = (obs).values
+        fig, axes = plt.subplots(math.ceil(n_pcs/2), 2, figsize=(15,17))
+        for i in range(n_pcs):
+            pc = pcs[..., i]
+            ax = axes.flatten()[i]
+            print(ax)
+            ax.scatter(pc, y, c="red",s=20, edgecolor='k')
+            plotfit = np.arange(pc.min(), pc.max(), 0.5)
+            fit = np.poly1d(np.polyfit(pc, y, 1))
+            model = HuberRegressor().fit(pc.reshape(-1, 1), y.reshape(-1, 1))
+            adj_r2Plot = round(model.score(pc.reshape(-1, 1), y.reshape(-1, 1)), 3)
+
+            ax.plot(plotfit, fit(plotfit), color="black", linestyle='--', linewidth=2)
+
+            ax.set_title('PC {} $r^2$ = {}'.format(i + 1, adj_r2Plot))
+
+        fig.suptitle('Observed value by Principal Components')
+        fig.supylabel('Observed value')
+        plt.savefig(f'{folder}/PC_vs_obs_{self.best["kernel"]}_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
         plt.close()
 
     def _plot_histogram(self, y_pred, y, folder):
@@ -345,7 +371,7 @@ if __name__ == "__main__":
 
     default_vars_X = [
         "AreaCot", "ChildrenHelp", "Evap", "FertAmount", "Irr",
-        "Lat", "Long", ""
+        "Lat", "Long",
         "Prec", "SeedsCost", "SoilDepth"
     ]
 
@@ -485,7 +511,7 @@ if __name__ == "__main__":
     Yplot = dat_irr['YieldObs']
 
     Xplot2 = sm.add_constant(Xplot_irr)
-    estPlot = sm.OLS(Yplot, Xplot2)
+    estPlot = sm.RLM(Yplot, Xplot2, M=sm.robust.norms.HuberT())
     estPlot2 = estPlot.fit()
 
     plt.figure(figsize=(10, 8))
@@ -495,10 +521,11 @@ if __name__ == "__main__":
     plt.scatter(Xplot_noIrr, Yplot, c="blue", s=20, edgecolor='k', label='Predicted yield')
 
     Xplot2 = sm.add_constant(Xplot_irr)
-    estPlot = sm.OLS(Yplot, Xplot2)
+    estPlot = sm.RLM(Yplot, Xplot2, M=sm.robust.norms.HuberT())
     estPlot2 = estPlot.fit()
     betaPlot = estPlot2.params
-    adj_r2Plot = round(estPlot2.rsquared_adj, 3)
+    rsquared_adj = sm.OLS(Yplot, Xplot2).fit().rsquared_adj
+    adj_r2Plot = round(rsquared_adj, 3)
     plt.text(300, 4000, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
     plt.text(300, 3600, 'µ = {}'.format(round(estPlot2.params[estPlot2.params.index[1]], 3)), ha='left', va='center',
              fontsize=18)
