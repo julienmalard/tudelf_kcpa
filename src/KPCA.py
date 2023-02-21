@@ -50,21 +50,22 @@ class KPCAModel(object):
         if not os.path.isdir(folder):
             os.makedirs(folder)
 
+        x = StandardScaler().fit_transform(self.data[self.vars_X])
+        y = self.data[self.var_Y]
+
+        # split training and test data
+        x_train_initial, x_test_initial, y_train_initial, y_test_initial = train_test_split(x, y, test_size=0.25, random_state=1)
+
         # Running KPCA
         for kernel in self.kernels:
             degs = range(1, 6) if kernel == "poly" else [None]
             for deg in degs:
                 print("kernel", kernel, "deg", deg)
 
-                x = StandardScaler().fit_transform(self.data[self.vars_X])
-                y = self.data[self.var_Y]
-
-                # split training and test data
-                x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.25, random_state=1)
 
                 kpca = KernelPCA(kernel=kernel, fit_inverse_transform=True, n_components=None, degree=deg)
-                x_train = kpca.fit_transform(x_train)
-                x_test = kpca.transform(x_test)
+                x_train = kpca.fit_transform(x_train_initial)
+                x_test = kpca.transform(x_test_initial)
 
                 d = kpca.lambdas_
                 d_cumsum = np.cumsum(d)
@@ -74,7 +75,7 @@ class KPCAModel(object):
                 # fitting model with significant pval
                 x_model = x_train[:, 1:n_count + 1]
                 X2 = sm.add_constant(x_model)
-                est = sm.RLM(y_train, X2, M=sm.robust.norms.HuberT())
+                est = sm.RLM(y_train_initial, X2, M=sm.robust.norms.HuberT())
                 fitted_est = est.fit()
                 pval = fitted_est.pvalues
                 idx_est = tuple(np.where(pval < 0.05)[0])
@@ -82,7 +83,7 @@ class KPCAModel(object):
 
                 x_model_significant = x_train[:, idx_est]
                 x2_significant = sm.add_constant(x_model_significant)
-                est_significant = sm.RLM(y_train, x2_significant, M=sm.robust.norms.HuberT())
+                est_significant = sm.RLM(y_train_initial, x2_significant, M=sm.robust.norms.HuberT())
                 fitted_est_significant = est_significant.fit()
                 print(fitted_est_significant.summary())
                 y_pred_train = fitted_est_significant.predict(x2_significant)
@@ -92,13 +93,13 @@ class KPCAModel(object):
                 y_pred_test = fitted_est_significant.predict(x2_test)
 
                 # evaluate
-                mae_train = mae(y_pred_train, y_train)
-                ns_train = ns(y_pred_train, y_train)
-                nslog_train = ns_log(y_pred_train, y_train)
+                mae_train = mae(y_pred_train, y_train_initial)
+                ns_train = ns(y_pred_train, y_train_initial)
+                nslog_train = ns_log(y_pred_train, y_train_initial)
 
-                mae_test = mae(y_pred_test, y_test)
-                ns_test = ns(y_pred_test, y_test)
-                nslog_test = ns_log(y_pred_test, y_test)
+                mae_test = mae(y_pred_test, y_test_initial)
+                ns_test = ns(y_pred_test, y_test_initial)
+                nslog_test = ns_log(y_pred_test, y_test_initial)
 
                 better = not self.best or ns_test > self.best["ns_test"]
 
@@ -122,7 +123,9 @@ class KPCAModel(object):
                         "nslog_train": nslog_train,
                         "mae_test": mae_test,
                         "ns_test": ns_test,
-                        "nslog_test": nslog_test
+                        "nslog_test": nslog_test,
+                        "x_test"
+                        "x_train": x_train
                     }
 
         self._plot_variance_explained(self.best["var_explained"], self.best['n_count'], folder)
@@ -136,7 +139,7 @@ class KPCAModel(object):
         print(f'NS of {self.best["kernel"]} Kernel PCA Test: {self.best["ns_test"]} [kg/ha]')
         print(f'NS log of {self.best["kernel"]} Kernel PCA Test: {self.best["nslog_test"]} [kg/ha]')
 
-        self._plot_testdata_kpca(self.best["y_pred_test"], y_test, folder)
+        self._plot_testdata_kpca(self.best["y_pred_test"], y_test_initial, folder)
 
         # ################################## KPCA ALL DATA ##############################################
         # transform all data and estimate them
@@ -155,11 +158,11 @@ class KPCAModel(object):
 
         # Hack for also predicting final yield when predictand is yield difference
         if self.var_Y in ["YieldDiff", "YieldObs"]:
-            yield_adj = y_pred_all
+            yield_adj = self.best["y_pred_test"]
             if self.var_Y == "YieldDiff":
-                yield_adj += self.data["YieldModel"]
+                yield_adj += x_test_initial[:, self.vars_X.index("YieldModel")]
 
-            yield_obs = self.data["YieldObs"]
+            yield_obs = y_test_initial
 
             print(f'MAE of {self.best["kernel"]} Predicted Yield: {mae(yield_adj, yield_obs)} [kg/ha]')
             print(f'NS of {self.best["kernel"]} Predicted Yield: {ns(yield_adj, yield_obs)} [-]')
@@ -186,7 +189,8 @@ class KPCAModel(object):
         plt.xlabel("Principal Components in Feature Space", fontsize=18)
         plt.ylabel("Variance Explained [-]", fontsize=18)
 
-        plt.savefig(f'{folder}/varExplained_{self.best["kernel"]}_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/varExplained_{self.best["kernel"]}_deg{self.best["deg"]}.png', dpi=300,
+                    bbox_inches="tight")
         plt.close()
 
     def _plot_kpca_summary(self, summary, folder):
@@ -196,7 +200,8 @@ class KPCAModel(object):
         plt.axis('off')
         plt.tight_layout()
 
-        plt.savefig(f'{folder}/KPCA_Summary_{self.best["kernel"]}_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/KPCA_Summary_{self.best["kernel"]}_deg{self.best["deg"]}.png', dpi=300,
+                    bbox_inches="tight")
         plt.close()
 
     def _plot_testdata_kpca(self, y_pred, y_test, folder):
@@ -259,7 +264,8 @@ class KPCAModel(object):
         plt.xlabel(f"Predicted {self.var_Y} [kg/ha]", fontsize=18)
         plt.ylabel(f"Observed {self.var_Y} [kg/ha]", fontsize=18)
 
-        plt.savefig(f'{folder}/KPCA_{self.best["kernel"]}_alldata_{self.var_Y}_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/KPCA_{self.best["kernel"]}_alldata_{self.var_Y}_deg{self.best["deg"]}.png', dpi=300,
+                    bbox_inches="tight")
         plt.close()
 
     def _plot_adjusted_predicted_yield(self, y_pred, y_obs, folder):
@@ -293,19 +299,20 @@ class KPCAModel(object):
         plt.title("Predicted Yield vs. Observed Yield", fontsize=18)
         plt.xlabel("Predicted Yield [kg/ha]", fontsize=18)
         plt.ylabel("Observed Yield [kg/ha]", fontsize=18)
-        plt.savefig(f'{folder}/KPCA_{self.best["kernel"]}_finalPredictedYield_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/KPCA_{self.best["kernel"]}_finalPredictedYield_deg{self.best["deg"]}.png', dpi=300,
+                    bbox_inches="tight")
         plt.close()
 
     def _plot_pc_vs_error(self, pcs, pred, obs, folder: str):
         self._plot_pc_vs_obs(pcs, obs, folder=folder)
         n_pcs = pcs.shape[1]
-        error = (pred-obs).values
-        fig, axes = plt.subplots(math.ceil(n_pcs/2), 2, figsize=(15,17))
+        error = (pred - obs).values
+        fig, axes = plt.subplots(math.ceil(n_pcs / 2), 2, figsize=(15, 17))
         for i in range(n_pcs):
             pc = pcs[..., i]
             ax = axes.flatten()[i]
             print(ax)
-            ax.scatter(pc, error, c="red",s=20, edgecolor='k')
+            ax.scatter(pc, error, c="red", s=20, edgecolor='k')
             plotfit = np.arange(pc.min(), pc.max(), 0.5)
             fit = np.poly1d(np.polyfit(pc, error, 1))
             model = HuberRegressor().fit(pc.reshape(-1, 1), error.reshape(-1, 1))
@@ -317,18 +324,19 @@ class KPCAModel(object):
 
         fig.suptitle('Total Error by Principal Components')
         fig.supylabel('Total error')
-        plt.savefig(f'{folder}/PC_vs_error_{self.best["kernel"]}_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/PC_vs_error_{self.best["kernel"]}_deg{self.best["deg"]}.png', dpi=300,
+                    bbox_inches="tight")
         plt.close()
 
     def _plot_pc_vs_obs(self, pcs, obs, folder: str):
         n_pcs = pcs.shape[1]
         y = (obs).values
-        fig, axes = plt.subplots(math.ceil(n_pcs/2), 2, figsize=(15,17))
+        fig, axes = plt.subplots(math.ceil(n_pcs / 2), 2, figsize=(15, 17))
         for i in range(n_pcs):
             pc = pcs[..., i]
             ax = axes.flatten()[i]
             print(ax)
-            ax.scatter(pc, y, c="red",s=20, edgecolor='k')
+            ax.scatter(pc, y, c="red", s=20, edgecolor='k')
             plotfit = np.arange(pc.min(), pc.max(), 0.5)
             fit = np.poly1d(np.polyfit(pc, y, 1))
             model = HuberRegressor().fit(pc.reshape(-1, 1), y.reshape(-1, 1))
@@ -365,6 +373,15 @@ class KPCAModel(object):
         plt.close()
 
 
+def remove_outliers(dataframe, vars):
+    to_keep = ((dataframe - dataframe.mean()) / dataframe.std()).abs() <= 3.5
+    vars_ignore_outliers = [v for v in dataframe.columns if v not in vars]
+    for v in vars_ignore_outliers:
+        pass
+        # to_keep[v] = True
+    return dataframe[to_keep].dropna()
+
+
 if __name__ == "__main__":
     dat = pd.read_excel(f"{DATA_DIR}/KPCA/KPCA_dat_adj_withCosts.xlsx", header=0)
     dat_irr = pd.read_excel(f"{DATA_DIR}/KPCA/KPCA_dat_adj_irr.xlsx", header=0)
@@ -375,42 +392,47 @@ if __name__ == "__main__":
         "Prec", "SeedsCost", "SoilDepth"
     ]
 
-    obsYield_vars_X = default_vars_X + ["YieldObs"]
-    obsYield_model = KPCAModel(obsYield_vars_X, var_y="YieldDiff", data=dat)
-    obsYield_model.train_and_plot(f"{PLOT_DIR}/base")
-
-    obsYield_model_irr = KPCAModel(obsYield_vars_X, var_y="YieldDiff", data=dat_irr)
-    obsYield_model_irr.train_and_plot(f"{PLOT_DIR}/base_irr")
-
-    noyield_model = KPCAModel(default_vars_X, var_y="YieldDiff", data=dat)
-    noyield_model.train_and_plot(f"{PLOT_DIR}/noYield")
-
-    noyield_model_irr = KPCAModel(default_vars_X, var_y="YieldDiff", data=dat_irr)
-    noyield_model_irr.train_and_plot(f"{PLOT_DIR}/noYield_irr")
-
     modelyield_vars_X = default_vars_X + ["YieldModel"]
-    modelyield_model = KPCAModel(modelyield_vars_X, var_y="YieldDiff", data=dat)
+    modelyield_model = KPCAModel(modelyield_vars_X, var_y="YieldDiff",
+                                 data=remove_outliers(dat, [*modelyield_vars_X, "YieldDiff"]))
     modelyield_model.train_and_plot(f"{PLOT_DIR}/modelYield")
 
     modelyield_model_irr = KPCAModel(modelyield_vars_X, var_y="YieldDiff", data=dat_irr)
     modelyield_model_irr.train_and_plot(f"{PLOT_DIR}/modelYield_irr")
 
-    emulator_vars_X = default_vars_X + ["PestCost", "FertCost"]
-    emulator_model = KPCAModel(emulator_vars_X, var_y="YieldModel", data=dat)
-    emulator_model.train_and_plot(f"{PLOT_DIR}/emulator")
+    obsYield_vars_X = default_vars_X + ["YieldObs"]
+    obsYield_model = KPCAModel(obsYield_vars_X, var_y="YieldDiff",
+                               data=remove_outliers(dat, [*obsYield_vars_X, "YieldDiff"]))
+    obsYield_model.train_and_plot(f"{PLOT_DIR}/base")
 
-    emulator_model_irr = KPCAModel(default_vars_X, var_y="YieldModel", data=dat_irr)
-    emulator_model_irr.train_and_plot(f"{PLOT_DIR}/emulator_irr")
+    obsYield_model_irr = KPCAModel(obsYield_vars_X, var_y="YieldDiff", data=dat_irr)
+    obsYield_model_irr.train_and_plot(f"{PLOT_DIR}/base_irr")
 
-    no_sdm_model = KPCAModel(default_vars_X, var_y="YieldObs", data=dat)
+    no_sdm_model = KPCAModel(default_vars_X, var_y="YieldObs", data=remove_outliers(dat, [*default_vars_X, "YieldObs"]))
     no_sdm_model.train_and_plot(f"{PLOT_DIR}/noSDM")
 
     no_sdm_model_irr = KPCAModel(default_vars_X, var_y="YieldObs", data=dat_irr)
     no_sdm_model_irr.train_and_plot(f"{PLOT_DIR}/noSDM_irr")
 
+    noyield_model = KPCAModel(default_vars_X, var_y="YieldDiff",
+                              data=remove_outliers(dat, [*default_vars_X, "YieldDiff"]))
+    noyield_model.train_and_plot(f"{PLOT_DIR}/noYield")
+
+    noyield_model_irr = KPCAModel(default_vars_X, var_y="YieldDiff", data=dat_irr)
+    noyield_model_irr.train_and_plot(f"{PLOT_DIR}/noYield_irr")
+
+    emulator_vars_X = default_vars_X + ["PestCost", "FertCost"]
+    emulator_model = KPCAModel(emulator_vars_X, var_y="YieldModel",
+                               data=remove_outliers(dat, [*emulator_vars_X, "YieldModel"]))
+    emulator_model.train_and_plot(f"{PLOT_DIR}/emulator")
+
+    emulator_model_irr = KPCAModel(default_vars_X, var_y="YieldModel", data=dat_irr)
+    emulator_model_irr.train_and_plot(f"{PLOT_DIR}/emulator_irr")
+
     avg_obs_yield_model_vars_X = default_vars_X + ["averageObsYield"]
     dat["averageObsYield"] = dat["YieldObs"].mean()
-    avg_obs_yield_model = KPCAModel(avg_obs_yield_model_vars_X, var_y="YieldObs", data=dat)
+    avg_obs_yield_model = KPCAModel(avg_obs_yield_model_vars_X, var_y="YieldObs",
+                                    data=remove_outliers(dat, [*avg_obs_yield_model_vars_X, "YieldObs"]))
     avg_obs_yield_model.train_and_plot(f"{PLOT_DIR}/averageObsYield")
 
     dat_irr["averageObsYield"] = dat_irr["YieldObs"].mean()
@@ -419,7 +441,7 @@ if __name__ == "__main__":
 
     WithCostsModelYieldNoPriceObsYield_vars_X = default_vars_X + ["PestCost", "FertCost", "YieldModel"]
     WithCostsModelYieldNoPriceObsYield_model = KPCAModel(WithCostsModelYieldNoPriceObsYield_vars_X, var_y="YieldDiff",
-                                                         data=dat)
+                                                         data=remove_outliers(dat))
     WithCostsModelYieldNoPriceObsYield_model.train_and_plot(f"{PLOT_DIR}/WithCostsModelYieldNoPriceObsYield")
 
     # %% evaluating benefit
