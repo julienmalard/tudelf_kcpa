@@ -341,7 +341,6 @@ class KPCAModel(object):
         for i in range(n_pcs):
             pc = pcs[..., i]
             ax = axes.flatten()[i]
-            print(ax)
             ax.scatter(pc, y, c="red", s=20, edgecolor='k')
             plotfit = np.arange(pc.min(), pc.max(), 0.5)
             fit = np.poly1d(np.polyfit(pc, y, 1))
@@ -532,7 +531,7 @@ if __name__ == "__main__":
     # %%
     Xplot_irr = Yield_adj_irr
     Xplot_noIrr = Yield_adj
-    Yplot = dat_irr['YieldObs']
+    Yplot = remove_outliers(dat_irr)['YieldObs']
 
     Xplot2 = sm.add_constant(Xplot_irr)
     estPlot = sm.RLM(Yplot, Xplot2, M=sm.robust.norms.HuberT())
@@ -541,8 +540,8 @@ if __name__ == "__main__":
     plt.figure(figsize=(10, 8))
     plt.fill_between(np.unique(Xplot_irr), np.unique(estPlot2.predict(sm.add_constant(Xplot_irr))) + 450,
                      np.unique(estPlot2.predict(sm.add_constant(Xplot_irr))) - 450, color='yellow', alpha=0.5)
-    plt.scatter(Xplot_irr, Yplot, c="red", s=20, edgecolor='k', label='Predicted yield with new ponds')
-    plt.scatter(Xplot_noIrr, Yplot, c="blue", s=20, edgecolor='k', label='Predicted yield')
+    plt.scatter(Xplot_irr, remove_outliers(dat_irr)['YieldObs'], c="red", s=20, edgecolor='k', label='Predicted yield with new ponds')
+    plt.scatter(Xplot_noIrr, remove_outliers(dat)['YieldObs'], c="blue", s=20, edgecolor='k', label='Predicted yield')
 
     Xplot2 = sm.add_constant(Xplot_irr)
     estPlot = sm.RLM(Yplot, Xplot2, M=sm.robust.norms.HuberT())
