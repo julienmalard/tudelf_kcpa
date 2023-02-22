@@ -49,12 +49,19 @@ class KPCAModel(object):
     def train_and_plot(self, folder=PLOT_DIR):
         if not os.path.isdir(folder):
             os.makedirs(folder)
-
-        x = StandardScaler().fit_transform(self.data[self.vars_X])
+        vars_x_with_model_yield = self.vars_X if "YieldModel" in self.vars_X else [*self.vars_X, "YieldModel"]
+        x = StandardScaler().fit_transform(self.data[vars_x_with_model_yield])
         y = self.data[self.var_Y]
 
         # split training and test data
         x_train_initial, x_test_initial, y_train_initial, y_test_initial = train_test_split(x, y, test_size=0.25, random_state=1)
+        yield_model_index = vars_x_with_model_yield.index("YieldModel")
+        x_test_model_yield = x_test_initial[:, yield_model_index]
+        if "YieldModel" not in self.vars_X:
+            x_test_initial = np.delete(x_test_initial, yield_model_index, axis=1)
+            x_train_initial = np.delete(x_train_initial, yield_model_index, axis=1)
+            x = np.delete(x, yield_model_index, axis=1)
+
 
         # Running KPCA
         for kernel in self.kernels:
@@ -85,7 +92,7 @@ class KPCAModel(object):
                 x2_significant = sm.add_constant(x_model_significant)
                 est_significant = sm.RLM(y_train_initial, x2_significant, M=sm.robust.norms.HuberT())
                 fitted_est_significant = est_significant.fit()
-                print(fitted_est_significant.summary())
+
                 y_pred_train = fitted_est_significant.predict(x2_significant)
 
                 # predict
@@ -127,7 +134,7 @@ class KPCAModel(object):
                         "x_test"
                         "x_train": x_train
                     }
-
+        print(self.best["fitted_est_significant"].summary())
         self._plot_variance_explained(self.best["var_explained"], self.best['n_count'], folder)
         self._plot_kpca_summary(self.best['fitted_est_significant'].summary(), folder)
 
@@ -160,7 +167,7 @@ class KPCAModel(object):
         if self.var_Y in ["YieldDiff", "YieldObs"]:
             yield_adj = self.best["y_pred_test"]
             if self.var_Y == "YieldDiff":
-                yield_adj += x_test_initial[:, self.vars_X.index("YieldModel")]
+                yield_adj += x_test_model_yield
 
             yield_obs = y_test_initial
 
@@ -311,7 +318,6 @@ class KPCAModel(object):
         for i in range(n_pcs):
             pc = pcs[..., i]
             ax = axes.flatten()[i]
-            print(ax)
             ax.scatter(pc, error, c="red", s=20, edgecolor='k')
             plotfit = np.arange(pc.min(), pc.max(), 0.5)
             fit = np.poly1d(np.polyfit(pc, error, 1))
@@ -364,7 +370,7 @@ class KPCAModel(object):
 
         plt.figure(figsize=(12, 7))
         plt.hist(a, bins, rwidth=0.8, label=labels, density=True)
-        plt.plot(x, stats.norm.pdf(x, mean, std), label='Assumed distribution of $\epsilon_r$')
+        plt.plot(x, stats.norm.pdf(x, mean, std), label=f'Assumed distribution of $\epsilon_r$ ($\mu$={round(mean)}, $\sigma$={round(std)})')
         plt.title('Histogram of residual error ($\epsilon_r$)', fontsize=18)
         plt.xlabel('Residual error ($\epsilon_r$) [kg/ha]', fontsize=18)
         plt.ylabel('Probability', fontsize=18)
@@ -373,12 +379,8 @@ class KPCAModel(object):
         plt.close()
 
 
-def remove_outliers(dataframe, vars):
+def remove_outliers(dataframe):
     to_keep = ((dataframe - dataframe.mean()) / dataframe.std()).abs() <= 3.5
-    vars_ignore_outliers = [v for v in dataframe.columns if v not in vars]
-    for v in vars_ignore_outliers:
-        pass
-        # to_keep[v] = True
     return dataframe[to_keep].dropna()
 
 
@@ -394,49 +396,49 @@ if __name__ == "__main__":
 
     modelyield_vars_X = default_vars_X + ["YieldModel"]
     modelyield_model = KPCAModel(modelyield_vars_X, var_y="YieldDiff",
-                                 data=remove_outliers(dat, [*modelyield_vars_X, "YieldDiff"]))
+                                 data=remove_outliers(dat))
     modelyield_model.train_and_plot(f"{PLOT_DIR}/modelYield")
 
-    modelyield_model_irr = KPCAModel(modelyield_vars_X, var_y="YieldDiff", data=dat_irr)
+    modelyield_model_irr = KPCAModel(modelyield_vars_X, var_y="YieldDiff", data=remove_outliers(dat_irr))
     modelyield_model_irr.train_and_plot(f"{PLOT_DIR}/modelYield_irr")
 
     obsYield_vars_X = default_vars_X + ["YieldObs"]
     obsYield_model = KPCAModel(obsYield_vars_X, var_y="YieldDiff",
-                               data=remove_outliers(dat, [*obsYield_vars_X, "YieldDiff"]))
+                               data=remove_outliers(dat))
     obsYield_model.train_and_plot(f"{PLOT_DIR}/base")
 
-    obsYield_model_irr = KPCAModel(obsYield_vars_X, var_y="YieldDiff", data=dat_irr)
+    obsYield_model_irr = KPCAModel(obsYield_vars_X, var_y="YieldDiff", data=remove_outliers(dat_irr))
     obsYield_model_irr.train_and_plot(f"{PLOT_DIR}/base_irr")
 
-    no_sdm_model = KPCAModel(default_vars_X, var_y="YieldObs", data=remove_outliers(dat, [*default_vars_X, "YieldObs"]))
+    no_sdm_model = KPCAModel(default_vars_X, var_y="YieldObs", data=remove_outliers(dat))
     no_sdm_model.train_and_plot(f"{PLOT_DIR}/noSDM")
 
-    no_sdm_model_irr = KPCAModel(default_vars_X, var_y="YieldObs", data=dat_irr)
+    no_sdm_model_irr = KPCAModel(default_vars_X, var_y="YieldObs", data=remove_outliers(dat_irr))
     no_sdm_model_irr.train_and_plot(f"{PLOT_DIR}/noSDM_irr")
 
     noyield_model = KPCAModel(default_vars_X, var_y="YieldDiff",
-                              data=remove_outliers(dat, [*default_vars_X, "YieldDiff"]))
+                              data=remove_outliers(dat))
     noyield_model.train_and_plot(f"{PLOT_DIR}/noYield")
 
-    noyield_model_irr = KPCAModel(default_vars_X, var_y="YieldDiff", data=dat_irr)
+    noyield_model_irr = KPCAModel(default_vars_X, var_y="YieldDiff", data=remove_outliers(dat_irr))
     noyield_model_irr.train_and_plot(f"{PLOT_DIR}/noYield_irr")
 
     emulator_vars_X = default_vars_X + ["PestCost", "FertCost"]
     emulator_model = KPCAModel(emulator_vars_X, var_y="YieldModel",
-                               data=remove_outliers(dat, [*emulator_vars_X, "YieldModel"]))
+                               data=remove_outliers(dat))
     emulator_model.train_and_plot(f"{PLOT_DIR}/emulator")
 
-    emulator_model_irr = KPCAModel(default_vars_X, var_y="YieldModel", data=dat_irr)
+    emulator_model_irr = KPCAModel(default_vars_X, var_y="YieldModel", data=remove_outliers(dat_irr))
     emulator_model_irr.train_and_plot(f"{PLOT_DIR}/emulator_irr")
 
     avg_obs_yield_model_vars_X = default_vars_X + ["averageObsYield"]
     dat["averageObsYield"] = dat["YieldObs"].mean()
     avg_obs_yield_model = KPCAModel(avg_obs_yield_model_vars_X, var_y="YieldObs",
-                                    data=remove_outliers(dat, [*avg_obs_yield_model_vars_X, "YieldObs"]))
+                                    data=remove_outliers(dat))
     avg_obs_yield_model.train_and_plot(f"{PLOT_DIR}/averageObsYield")
 
     dat_irr["averageObsYield"] = dat_irr["YieldObs"].mean()
-    avg_obs_yield_model_irr = KPCAModel(avg_obs_yield_model_vars_X, var_y="YieldObs", data=dat_irr)
+    avg_obs_yield_model_irr = KPCAModel(avg_obs_yield_model_vars_X, var_y="YieldObs", data=remove_outliers(dat_irr))
     avg_obs_yield_model_irr.train_and_plot(f"{PLOT_DIR}/averageObsYield_irr")
 
     WithCostsModelYieldNoPriceObsYield_vars_X = default_vars_X + ["PestCost", "FertCost", "YieldModel"]
@@ -450,8 +452,8 @@ if __name__ == "__main__":
     Irr_exist = survey_dat["water/area_irrig"] > 0
     CottonArea = survey_dat['financial_information/area_cotton']
 
-    Yield_adj = dat["YieldModel"] + modelyield_model.y_pred_all
-    Yield_adj_irr = dat_irr["YieldModel"] + modelyield_model_irr.y_pred_all
+    Yield_adj = remove_outliers(dat)["YieldModel"] + modelyield_model.y_pred_all
+    Yield_adj_irr = remove_outliers(dat_irr)["YieldModel"] + modelyield_model_irr.y_pred_all
     Benefit = (Yield_adj_irr - Yield_adj) * 67. * 3.5
 
     Ben_extIrr = round(Benefit[Irr_exist].mean())
