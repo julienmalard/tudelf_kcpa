@@ -1,6 +1,7 @@
 import os
 
 import pandas as pd
+from sklearn.metrics import r2_score
 
 from KPCA import KPCAModel, remove_outliers, save_model_comparison_table
 

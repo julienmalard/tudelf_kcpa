@@ -15,7 +15,7 @@ import statsmodels.api as sm
 from scipy.stats import norm
 from sklearn.decomposition import KernelPCA
 from sklearn.linear_model import HuberRegressor
-from sklearn.metrics import r2_score,
+from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
