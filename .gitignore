@@ -141,4 +141,5 @@ cython_debug/
 
 .idea
 input_data
-plots
+out
+_plots

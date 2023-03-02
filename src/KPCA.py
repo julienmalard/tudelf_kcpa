@@ -6,22 +6,20 @@ Created on Wed Mar 31 13:35:17 2021
 """
 import math
 import os
+from typing import Dict, Union, List
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import scipy.stats as stats
 import statsmodels.api as sm
 from scipy.stats import norm
 from sklearn.decomposition import KernelPCA
 from sklearn.linear_model import HuberRegressor
+from sklearn.metrics import r2_score,
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 plt.rcParams.update({'font.size': 12})
-
-DATA_DIR = "../input_data"
-PLOT_DIR = "../plots"
 
 
 def mae(pred, obs):
@@ -36,17 +34,22 @@ def ns_log(pred, obs):
     return 1 - (np.sum((np.log10(pred) - np.log10(obs)) ** 2) / np.sum((np.log10(obs.mean()) - np.log10(obs)) ** 2))
 
 
+def r2(pred, obs):
+    return r2_score(obs, pred)
+
+
 class KPCAModel(object):
     def __init__(self, vars_x, var_y, data, kernels=None):
         self.vars_X = vars_x
         self.var_Y = var_y
         self.data = data
-        self.kernels = kernels or ["rbf", "sigmoid", "poly"]
+        self.kernels = kernels or ["rbf", "sigmoid", "poly", "cosine"]
 
         self.best = {}
         self.y_pred_all = None
+        self.saved_statistics = {}
 
-    def train_and_plot(self, folder=PLOT_DIR):
+    def train_and_plot(self, folder):
         if not os.path.isdir(folder):
             os.makedirs(folder)
         vars_x_with_model_yield = self.vars_X if "YieldModel" in self.vars_X else [*self.vars_X, "YieldModel"]
@@ -54,7 +57,8 @@ class KPCAModel(object):
         y = self.data[self.var_Y]
 
         # split training and test data
-        x_train_initial, x_test_initial, y_train_initial, y_test_initial = train_test_split(x, y, test_size=0.25, random_state=1)
+        x_train_initial, x_test_initial, y_train_initial, y_test_initial = train_test_split(x, y, test_size=0.25,
+                                                                                            random_state=1)
         yield_model_index = vars_x_with_model_yield.index("YieldModel")
         x_test_model_yield = x_test_initial[:, yield_model_index]
         if "YieldModel" not in self.vars_X:
@@ -62,13 +66,11 @@ class KPCAModel(object):
             x_train_initial = np.delete(x_train_initial, yield_model_index, axis=1)
             x = np.delete(x, yield_model_index, axis=1)
 
-
         # Running KPCA
         for kernel in self.kernels:
-            degs = range(1, 6) if kernel == "poly" else [None]
+            degs = range(2, 6) if kernel == "poly" else [None]
             for deg in degs:
                 print("kernel", kernel, "deg", deg)
-
 
                 kpca = KernelPCA(kernel=kernel, fit_inverse_transform=True, n_components=None, degree=deg)
                 x_train = kpca.fit_transform(x_train_initial)
@@ -107,6 +109,20 @@ class KPCAModel(object):
                 mae_test = mae(y_pred_test, y_test_initial)
                 ns_test = ns(y_pred_test, y_test_initial)
                 nslog_test = ns_log(y_pred_test, y_test_initial)
+                r2_test = r2(y_pred_test, y_test_initial)
+                print("here", ns_test, r2_test)
+
+                y_pred_all = fitted_est_significant.predict(sm.add_constant(kpca.transform(x)[:, idx_est]))
+                mae_all = mae(y_pred_all, y)
+                ns_all = ns(y_pred_all, y)
+                kernel_name = f"Poly deg {deg}" if kernel == 'poly' else \
+                    {"sigmoid": "Sigmoid", "rbf": "RBF", "cosine": "Cosine"}[kernel]
+                self.saved_statistics[kernel_name] = {
+                    "MAE_train": mae_train, "MAE_test": mae_test, "MAE_all": mae_all, "NS_test": ns_test,
+                    "NS_train": ns_train, "NS_all": ns_all,
+                    "R2_test": r2_test,
+                    "NSlog_test": nslog_test
+                }
 
                 better = not self.best or ns_test > self.best["ns_test"]
 
@@ -131,8 +147,9 @@ class KPCAModel(object):
                         "mae_test": mae_test,
                         "ns_test": ns_test,
                         "nslog_test": nslog_test,
-                        "x_test"
-                        "x_train": x_train
+                        "x_test": x_test,
+                        "x_train": x_train,
+                        "r2_test": r2_test
                     }
         print(self.best["fitted_est_significant"].summary())
         self._plot_variance_explained(self.best["var_explained"], self.best['n_count'], folder)
@@ -143,8 +160,9 @@ class KPCAModel(object):
         print(f'NS log of {self.best["kernel"]} Kernel PCA Train: {self.best["nslog_train"]} [kg/ha]')
 
         print(f'MAE of {self.best["kernel"]} Kernel PCA Test: {self.best["mae_test"]} [kg/ha]')
-        print(f'NS of {self.best["kernel"]} Kernel PCA Test: {self.best["ns_test"]} [kg/ha]')
-        print(f'NS log of {self.best["kernel"]} Kernel PCA Test: {self.best["nslog_test"]} [kg/ha]')
+        print(f'NS of {self.best["kernel"]} Kernel PCA Test: {self.best["ns_test"]}')
+        print(f'NS log of {self.best["kernel"]} Kernel PCA Test: {self.best["nslog_test"]}')
+        print(f'R2 log of {self.best["kernel"]} Kernel PCA Test: {self.best["r2_test"]}')
 
         self._plot_testdata_kpca(self.best["y_pred_test"], y_test_initial, folder)
 
@@ -177,6 +195,31 @@ class KPCAModel(object):
             self._plot_adjusted_predicted_yield(yield_adj, yield_obs, folder=folder)
 
         self._plot_histogram(y_pred_all, y, folder=folder)
+
+    def save_tables(self, directory: str):
+        self.save_kernel_validation_table(file=os.path.join(directory, "kernel validation.txt"))
+
+    def save_kernel_validation_table(self, file: str):
+        if not self.saved_statistics:
+            raise ValueError("Run KPCAModel.train_and_plot first.")
+
+        rows = []
+        for kernel, st in self.saved_statistics.items():
+            rows.append(
+                "\\textbf{" + kernel + "} & " + f"{round(st['MAE_train'])} & {round_(st['NS_train'])} & {round(st['MAE_test'])} & {round_(st['NS_test'])} & {round(st['MAE_all'])} & {round_(st['NS_all'])} \\\\")
+
+        tableLaTEX = """
+\\begin{tabular}{lrrrrrr}
+\\textbf{} & \multicolumn{2}{c}{\\textbf{Train Data}} & \multicolumn{2}{c}{\\textbf{Test Data}} & \multicolumn{2}{c}{\\textbf{All Data}} \\\\
+\\textbf{} & \\textbf{MAE {[}$\\frac{kg}{ha}${]}} & \\textbf{NS {[}-{]}} & \\textbf{MAE {[}$\\frac{kg}{ha}${]}} & \\textbf{NS {[}-{]}} & \\textbf{MAE {[}$\\frac{kg}{ha}${]}} & \\textbf{NS {[}-{]}} \\\\ \hline
+""" + "\n".join(rows) + """\hline
+\end{tabular}
+"""
+        folder = os.path.dirname(file)
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+        with open(file, encoding="utf8", mode='w') as f:
+            f.write(tableLaTEX)
 
     def _plot_variance_explained(self, var_explained, n_count, folder):
         x_plot = np.arange(1, len(var_explained) + 1)
@@ -238,7 +281,7 @@ class KPCAModel(object):
         plt.xlabel(f"Predicted {self.var_Y} [kg/ha]", fontsize=18)
         plt.ylabel(f"Observed {self.var_Y} [kg/ha]", fontsize=18)
         plt.grid(color='k', linestyle='-', linewidth=0.1)
-        plt.savefig(f'{folder}/KPCA_{self.best["kernel"]}_validate_{self.var_Y}_deg{self.best["deg"]}.png', dpi=300,
+        plt.savefig(f'{folder}/KPCA_validate.png', dpi=300,
                     bbox_inches="tight")
         plt.close()
 
@@ -271,12 +314,11 @@ class KPCAModel(object):
         plt.xlabel(f"Predicted {self.var_Y} [kg/ha]", fontsize=18)
         plt.ylabel(f"Observed {self.var_Y} [kg/ha]", fontsize=18)
 
-        plt.savefig(f'{folder}/KPCA_{self.best["kernel"]}_alldata_{self.var_Y}_deg{self.best["deg"]}.png', dpi=300,
+        plt.savefig(f'{folder}/KPCA_allData_predicted_vs_obs.png', dpi=300,
                     bbox_inches="tight")
         plt.close()
 
     def _plot_adjusted_predicted_yield(self, y_pred, y_obs, folder):
-        print("range yield obs: ", y_obs.min(), y_obs.max())
         # plot adjusted yield
         fitted_estplot = sm.RLM(y_obs, sm.add_constant(y_pred), M=sm.robust.norms.HuberT()).fit()
 
@@ -306,7 +348,7 @@ class KPCAModel(object):
         plt.title("Predicted Yield vs. Observed Yield", fontsize=18)
         plt.xlabel("Predicted Yield [kg/ha]", fontsize=18)
         plt.ylabel("Observed Yield [kg/ha]", fontsize=18)
-        plt.savefig(f'{folder}/KPCA_{self.best["kernel"]}_finalPredictedYield_deg{self.best["deg"]}.png', dpi=300,
+        plt.savefig(f'{folder}/KPCA_FinalPredictedYield.png', dpi=300,
                     bbox_inches="tight")
         plt.close()
 
@@ -330,7 +372,7 @@ class KPCAModel(object):
 
         fig.suptitle('Total Error by Principal Components')
         fig.supylabel('Total error')
-        plt.savefig(f'{folder}/PC_vs_error_{self.best["kernel"]}_deg{self.best["deg"]}.png', dpi=300,
+        plt.savefig(f'{folder}/PC_vs_error.png', dpi=300,
                     bbox_inches="tight")
         plt.close()
 
@@ -353,7 +395,7 @@ class KPCAModel(object):
 
         fig.suptitle('Observed value by Principal Components')
         fig.supylabel('Observed value')
-        plt.savefig(f'{folder}/PC_vs_obs_{self.best["kernel"]}_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/PC_vs_obs.png', dpi=300, bbox_inches="tight")
         plt.close()
 
     def _plot_histogram(self, y_pred, y, folder):
@@ -369,12 +411,13 @@ class KPCAModel(object):
 
         plt.figure(figsize=(12, 7))
         plt.hist(a, bins, rwidth=0.8, label=labels, density=True)
-        plt.plot(x, stats.norm.pdf(x, mean, std), label=f'Assumed distribution of $\epsilon_r$ ($\mu$={round(mean)}, $\sigma$={round(std)})')
+        plt.plot(x, stats.norm.pdf(x, mean, std),
+                 label=f'Assumed distribution of $\epsilon_r$ ($\mu$={round(mean)}, $\sigma$={round(std)})')
         plt.title('Histogram of residual error ($\epsilon_r$)', fontsize=18)
         plt.xlabel('Residual error ($\epsilon_r$) [kg/ha]', fontsize=18)
         plt.ylabel('Probability', fontsize=18)
         plt.legend()
-        plt.savefig(f'{folder}/HistEr_{self.best["kernel"]}_deg{self.best["deg"]}.png', dpi=300, bbox_inches="tight")
+        plt.savefig(f'{folder}/Error histogram.png', dpi=300, bbox_inches="tight")
         plt.close()
 
 
@@ -383,215 +426,30 @@ def remove_outliers(dataframe):
     return dataframe[to_keep].dropna()
 
 
-if __name__ == "__main__":
-    dat = pd.read_excel(f"{DATA_DIR}/KPCA/KPCA_dat_adj_withCosts.xlsx", header=0)
-    dat_irr = pd.read_excel(f"{DATA_DIR}/KPCA/KPCA_dat_adj_irr.xlsx", header=0)
-
-    default_vars_X = [
-        "AreaCot", "ChildrenHelp", "Evap", "FertAmount", "Irr",
-        "Lat", "Long",
-        "Prec", "SeedsCost", "SoilDepth"
-    ]
-
-    modelyield_vars_X = default_vars_X + ["YieldModel"]
-    modelyield_model = KPCAModel(modelyield_vars_X, var_y="YieldDiff",
-                                 data=remove_outliers(dat))
-    modelyield_model.train_and_plot(f"{PLOT_DIR}/modelYield")
-
-    modelyield_model_irr = KPCAModel(modelyield_vars_X, var_y="YieldDiff", data=remove_outliers(dat_irr))
-    modelyield_model_irr.train_and_plot(f"{PLOT_DIR}/modelYield_irr")
-
-    obsYield_vars_X = default_vars_X + ["YieldObs"]
-    obsYield_model = KPCAModel(obsYield_vars_X, var_y="YieldDiff",
-                               data=remove_outliers(dat))
-    obsYield_model.train_and_plot(f"{PLOT_DIR}/base")
-
-    obsYield_model_irr = KPCAModel(obsYield_vars_X, var_y="YieldDiff", data=remove_outliers(dat_irr))
-    obsYield_model_irr.train_and_plot(f"{PLOT_DIR}/base_irr")
-
-    no_sdm_model = KPCAModel(default_vars_X, var_y="YieldObs", data=remove_outliers(dat))
-    no_sdm_model.train_and_plot(f"{PLOT_DIR}/noSDM")
-
-    no_sdm_model_irr = KPCAModel(default_vars_X, var_y="YieldObs", data=remove_outliers(dat_irr))
-    no_sdm_model_irr.train_and_plot(f"{PLOT_DIR}/noSDM_irr")
-
-    noyield_model = KPCAModel(default_vars_X, var_y="YieldDiff",
-                              data=remove_outliers(dat))
-    noyield_model.train_and_plot(f"{PLOT_DIR}/noYield")
-
-    noyield_model_irr = KPCAModel(default_vars_X, var_y="YieldDiff", data=remove_outliers(dat_irr))
-    noyield_model_irr.train_and_plot(f"{PLOT_DIR}/noYield_irr")
-
-    emulator_vars_X = default_vars_X + ["PestCost", "FertCost"]
-    emulator_model = KPCAModel(emulator_vars_X, var_y="YieldModel",
-                               data=remove_outliers(dat))
-    emulator_model.train_and_plot(f"{PLOT_DIR}/emulator")
-
-    emulator_model_irr = KPCAModel(default_vars_X, var_y="YieldModel", data=remove_outliers(dat_irr))
-    emulator_model_irr.train_and_plot(f"{PLOT_DIR}/emulator_irr")
-
-    avg_obs_yield_model_vars_X = default_vars_X + ["averageObsYield"]
-    dat["averageObsYield"] = dat["YieldObs"].mean()
-    avg_obs_yield_model = KPCAModel(avg_obs_yield_model_vars_X, var_y="YieldObs",
-                                    data=remove_outliers(dat))
-    avg_obs_yield_model.train_and_plot(f"{PLOT_DIR}/averageObsYield")
-
-    dat_irr["averageObsYield"] = dat_irr["YieldObs"].mean()
-    avg_obs_yield_model_irr = KPCAModel(avg_obs_yield_model_vars_X, var_y="YieldObs", data=remove_outliers(dat_irr))
-    avg_obs_yield_model_irr.train_and_plot(f"{PLOT_DIR}/averageObsYield_irr")
-
-    WithCostsModelYieldNoPriceObsYield_vars_X = default_vars_X + ["PestCost", "FertCost", "YieldModel"]
-    WithCostsModelYieldNoPriceObsYield_model = KPCAModel(WithCostsModelYieldNoPriceObsYield_vars_X, var_y="YieldDiff",
-                                                         data=remove_outliers(dat))
-    WithCostsModelYieldNoPriceObsYield_model.train_and_plot(f"{PLOT_DIR}/WithCostsModelYieldNoPriceObsYield")
-
-    # %% evaluating benefit
-    survey_dat = pd.read_csv(f"{DATA_DIR}/Baseline/Final_Analysis_345_nrh_TijmenData_v4.csv", header=0)
-
-    Irr_exist = survey_dat["water/area_irrig"] > 0
-    CottonArea = survey_dat['financial_information/area_cotton']
-
-    Yield_adj = remove_outliers(dat)["YieldModel"] + modelyield_model.y_pred_all
-    Yield_adj_irr = remove_outliers(dat_irr)["YieldModel"] + modelyield_model_irr.y_pred_all
-    Benefit = (Yield_adj_irr - Yield_adj) * 67. * 3.5
-
-    Ben_extIrr = round(Benefit[Irr_exist].mean())
-    Ben_noIrr = round(Benefit[~Irr_exist].mean())
-    IrrBenefit = np.array((Ben_extIrr, Ben_noIrr))
-
-    colors_ben = np.array(['g'] * len(IrrBenefit))
-    colors_ben[IrrBenefit < 0] = 'r'
-    x = np.array(['had irrigation', 'no irrigation'])
-    plt.figure(figsize=(3, 7))
-    bars2 = plt.bar(x, IrrBenefit, color=colors_ben)
-    plt.ylabel("Mean Benefit per farmer [INR/y/ha]", fontsize=16)
-    plt.title("Benefit", fontsize=16)
-    plt.text(bars2[0].get_x() + 0.2, bars2[0].get_height() + 50, bars2[0].get_height())
-    plt.text(bars2[1].get_x() + 0.2, bars2[1].get_height() - 300, bars2[1].get_height())
-
-    plt.savefig(f'{PLOT_DIR}/BenefitBarIrr.png', dpi=300, bbox_inches="tight")
-    plt.close()
-
-    # %% bar plot
-    Village = survey_dat["General/village_name"]
-    Villages = Village.unique()
-    IrrBenefit_vil = np.zeros(len(Villages))
-    for i in range(len(Villages)):
-        tmp = Village == Villages[i]
-        IrrBenefit_vil[i] = np.round(Benefit[tmp].mean())
-
-    colors = np.array(['g'] * len(Villages))
-    colors[IrrBenefit_vil < 0] = 'r'
-    plt.figure(figsize=(10, 20))
-    bars = plt.barh(Villages, IrrBenefit_vil, color=colors)
-    plt.ylabel("Mean Benefit per farmer [Rs/y]")
-    plt.title("Benefit per village")
-
-    plt.savefig(f'{PLOT_DIR}/BenefitBarVillage.png', dpi=300, bbox_inches="tight")
-    plt.close()
-
-    # %% hist of yield increase
-    a = Yield_adj_irr - Yield_adj
-
-    bins = np.linspace(-200, 200, 100)
-    labels = ['Farmers with existing irrigation', 'Farmers without prior irrigation']
-
-    plt.figure(figsize=(12, 7))
-    plt.hist(a, bins, rwidth=0.8, label=labels, density=True)
-    plt.title('Histogram of yield increase', fontsize=18)
-    plt.xlabel('Yield increase [kg/ha]', fontsize=18)
-    plt.ylabel('Probability', fontsize=18)
-    plt.legend()
-
-    plt.savefig(f'{PLOT_DIR}/histYieldIncrease.png', dpi=300, bbox_inches="tight")
-    plt.close()
+def round_(x):
+    return float('%.3g' % x)
 
 
-    # %% hist of yield
-    def plot_hist_yield(a, b, title, file):
-        bins = np.linspace(0, 5000, 50)
-        labels = ['Old yield', 'Yield with new pond']
+def save_model_comparison_table(models: Dict[str, Union[KPCAModel, Dict]], file: str):
+    rows = []
+    for label, model in models.items():
+        if isinstance(model, dict):
+            st = model
+        else:
+            st = model.best
+        rows.append(
+            f"{label} & {round(st['mae_test'])} & {round(st['ns_test'], 4)} & {round(st['nslog_test'], 4)} & {round(st['r2_test'], 3 )} \\\\"
+        )
 
-        plt.figure(figsize=(12, 7))
-        plt.hist([a, b], bins, rwidth=0.8, label=labels, density=True)
-        plt.title(title, fontsize=18)
-
-        plt.xlabel('Yield [kg/ha]', fontsize=18)
-        plt.ylabel('Probability', fontsize=18)
-        plt.legend()
-
-        plt.savefig(file, dpi=300, bbox_inches="tight")
-        plt.close()
-
-
-    plot_hist_yield(Yield_adj, Yield_adj_irr, 'Histogram of yield', f'{PLOT_DIR}/histYield.png')
-    plot_hist_yield(Yield_adj[Irr_exist], Yield_adj_irr[Irr_exist],
-                    'Histogram of yield (farmers with existing irrigation)', f'{PLOT_DIR}/histYield_existingIrr.png')
-
-    # %%
-    Xplot_irr = Yield_adj_irr
-    Xplot_noIrr = Yield_adj
-    Yplot = remove_outliers(dat_irr)['YieldObs']
-
-    Xplot2 = sm.add_constant(Xplot_irr)
-    estPlot = sm.RLM(Yplot, Xplot2, M=sm.robust.norms.HuberT())
-    estPlot2 = estPlot.fit()
-
-    plt.figure(figsize=(10, 8))
-    plt.fill_between(np.unique(Xplot_irr), np.unique(estPlot2.predict(sm.add_constant(Xplot_irr))) + 450,
-                     np.unique(estPlot2.predict(sm.add_constant(Xplot_irr))) - 450, color='yellow', alpha=0.5)
-    plt.scatter(Xplot_irr, remove_outliers(dat_irr)['YieldObs'], c="red", s=20, edgecolor='k', label='Predicted yield with new ponds')
-    plt.scatter(Xplot_noIrr, remove_outliers(dat)['YieldObs'], c="blue", s=20, edgecolor='k', label='Predicted yield')
-
-    Xplot2 = sm.add_constant(Xplot_irr)
-    estPlot = sm.RLM(Yplot, Xplot2, M=sm.robust.norms.HuberT())
-    estPlot2 = estPlot.fit()
-    betaPlot = estPlot2.params
-    rsquared_adj = sm.OLS(Yplot, Xplot2).fit().rsquared_adj
-    adj_r2Plot = round(rsquared_adj, 3)
-    plt.text(300, 4000, '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
-    plt.text(300, 3600, 'µ = {}'.format(round(estPlot2.params[estPlot2.params.index[1]], 3)), ha='left', va='center',
-             fontsize=18)
-    # plt.errorbar(Xplot, Yplot,  0, 450, fmt='r^',label='Annual yield per farmer', elinewidth =0.5,
-    #               marker='x', markersize='5',markeredgecolor='blue', ecolor=['red'],barsabove=False)
-    plt.plot(np.arange(0, 5000), np.arange(0, 5000), color="black")
-    plt.plot(np.unique(Xplot_irr), np.unique(estPlot2.predict(sm.add_constant(Xplot_irr))), color="black",
-             linestyle='--')
-    plt.xlim(0, 5000)
-    plt.ylim(0, 5000)
-    plt.title("Predicted Yield vs. Observed Yield", fontsize=18)
-    plt.xlabel("Predicted Yield [kg/ha]", fontsize=18)
-    plt.ylabel("Observed Yield [kg/ha]", fontsize=18)
-    plt.legend()
-    plt.savefig(f'{PLOT_DIR}/PredictedVsObservedYield.png', dpi=300, bbox_inches="tight")
-    plt.close()
-
-    # %% linear regressions of pc results from spss
-    SPSS_dat = pd.read_excel(f"{DATA_DIR}/KPCA/PCs_TotalError.xlsx", header=0)
-
-    plotfit = np.arange(-2.2, 3.5, 0.5)
-
-    namePC = 'PC3'
-    Xplot = np.array(SPSS_dat[namePC])
-    Yplot = np.array(SPSS_dat.iloc[:, -1])
-
-    plt.figure(figsize=(10, 8))
-    plt.scatter(Xplot, Yplot, c="red", s=20, edgecolor='k')
-
-    fit = np.poly1d(np.polyfit(Xplot, Yplot, 1))
-    model = HuberRegressor().fit(Xplot.reshape(-1, 1), Yplot.reshape(-1, 1))
-    adj_r2Plot = round(model.score(Xplot.reshape(-1, 1), Yplot.reshape(-1, 1)), 3)
-
-    plt.text(min(Xplot) + 6, max(Yplot), '$r^2$ = {}'.format(adj_r2Plot), ha='left', va='center', fontsize=18)
-    # plt.plot(np.unique(Xplot), np.unique(estPlot2.predict(sm.add_constant(Xplot))), color="black",linestyle='--')
-    plt.plot(plotfit, fit(plotfit), color="black", linestyle='--', linewidth=2)
-    plt.xlim(-3.5, 6)
-    # plt.ylim(0,5000)
-    plt.grid(color='k', linestyle='-', linewidth=0.1)
-    plt.title("Total Error by Perceived Fertilizer Cost, Pesticide Cost, and Crop Price ({})".format(namePC),
-              fontsize=18)
-    plt.xlabel("Perceived Fertilizer Cost, Pesticide Cost, and Crop Price ({})".format(namePC), fontsize=18)
-    plt.ylabel("Total Error [kg/ha]", fontsize=18)
-
-    plt.savefig(f'{PLOT_DIR}/Regression{namePC}.png', dpi=300, bbox_inches="tight")
-    plt.close()
+    tableLaTEX = """
+\\begin{tabular}{lllll}
+\hline
+ & $MAE$ [kg/ha] & $NS$ [-] & $NS_{log}$ [-] & $r^2$ [-] \\\\ \hline
+""" + "\n".join(rows) + """\hline
+\end{tabular}
+    """
+    folder = os.path.dirname(file)
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    with open(file, encoding="utf8", mode='w') as f:
+        f.write(tableLaTEX)
