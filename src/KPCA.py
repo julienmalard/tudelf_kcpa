@@ -6,15 +6,15 @@ Created on Wed Mar 31 13:35:17 2021
 """
 import math
 import os
-from typing import Dict, Union, List
+from typing import Dict, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats as stats
 import statsmodels.api as sm
 from scipy.stats import norm
-from sklearn.decomposition import KernelPCA
-from sklearn.linear_model import HuberRegressor
+from sklearn.decomposition import KernelPCA, PCA
+from sklearn.linear_model import HuberRegressor, LinearRegression
 from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -53,18 +53,94 @@ class KPCAModel(object):
         if not os.path.isdir(folder):
             os.makedirs(folder)
         vars_x_with_model_yield = self.vars_X if "YieldModel" in self.vars_X else [*self.vars_X, "YieldModel"]
-        x = StandardScaler().fit_transform(self.data[vars_x_with_model_yield])
+        vars_x_with_model_yield_and_error = vars_x_with_model_yield if "YieldDiff" in vars_x_with_model_yield else [*vars_x_with_model_yield, "YieldDiff"]
+        x = StandardScaler().fit_transform(self.data[vars_x_with_model_yield_and_error])
         y = self.data[self.var_Y]
 
         # split training and test data
-        x_train_initial, x_test_initial, y_train_initial, y_test_initial = train_test_split(x, y, test_size=0.25,
-                                                                                            random_state=1)
-        yield_model_index = vars_x_with_model_yield.index("YieldModel")
+        x_train_initial, x_test_initial, y_train_initial, y_test_initial = train_test_split(
+            x, y, test_size=0.25,
+            random_state=1)
+        yield_model_index = vars_x_with_model_yield_and_error.index("YieldDiff")
         x_test_model_yield = x_test_initial[:, yield_model_index]
+
+        error_model_index = vars_x_with_model_yield_and_error.index("YieldDiff")
+        x_train_model_error = x_train_initial[:, error_model_index]
+        x_model_error = x[:, error_model_index]
+
         if "YieldModel" not in self.vars_X:
             x_test_initial = np.delete(x_test_initial, yield_model_index, axis=1)
             x_train_initial = np.delete(x_train_initial, yield_model_index, axis=1)
             x = np.delete(x, yield_model_index, axis=1)
+
+        if "YieldDiff" not in self.vars_X:
+            x_test_initial = np.delete(x_test_initial, error_model_index, axis=1)
+            x_train_initial = np.delete(x_train_initial, error_model_index, axis=1)
+            x = np.delete(x, error_model_index, axis=1)
+
+        # Run PCA
+        pca = PCA()
+        x_train = pca.fit_transform(x_train_initial)
+        d = pca.explained_variance_ratio_
+        var_explained = np.cumsum(d)
+        n_count = sum(var_explained <= 0.90) + 1
+
+        # fitting model with significant pval
+        x_model = x_train[:, 1:n_count + 1]
+        X2 = sm.add_constant(x_model)
+        est = sm.RLM(y_train_initial, X2, M=sm.robust.norms.HuberT())
+        fitted_est = est.fit()
+        pval = fitted_est.pvalues
+        idx_est = tuple(np.where(pval < 0.05)[0])
+        idx_est = idx_est[1:]
+        most_important = [np.array(self.vars_X)[np.abs(pca.components_[i]) >= 0.5] for i in idx_est]
+
+        x_model_significant = x_train[:, idx_est]
+
+        model = sm.OLS(x_model_error, x).fit()
+        rows = []
+        for i, var_name in enumerate(self.vars_X):
+            rows.append(
+                "\\textbf{" + var_name + "} & " + f"{round_(model.params[i])} & {round_(model.pvalues[i])} \\\\")
+
+        tableLaTEX = """
+        \\begin{tabular}{lrr}
+        \\textbf{} & \\textbf{Coef} & \\textbf{P-value} \\\\ \hline
+        """ + "\n".join(rows) + """\hline
+        \end{tabular}
+        """
+        with open(f'{folder}/linregTable.txt', encoding="utf8", mode='w') as f:
+            f.write(tableLaTEX)
+
+        error = x_train_model_error
+
+        plt.clf()
+        plt.figure(figsize=(15, 17))
+        plt.title('Total Error by Prediction by Each PC')
+        plt.xlabel('Month')
+        plt.ylabel('Total Error [kg/ha]')
+        plt.rcParams.update({'font.size': 18})
+        plotfit = np.arange(-3, 5.5, 0.5)
+
+        for i in range(len(idx_est)):
+            plt.subplot(len(idx_est) // 2 + 1, 2, i + 1)
+            plt.scatter(x_model_significant[:, i], error, c="red", s=20, edgecolor='k')
+            fit = np.poly1d(np.polyfit(x_model_significant[:, i], error, 1))
+            model = LinearRegression().fit(x_model_significant[:, i].reshape(-1, 1), error.reshape(-1, 1))
+            adj_r2Plot = round(model.score(x_model_significant[:, i].reshape(-1, 1), error.reshape(-1, 1)), 3)
+
+            plt.text(1.2, 0, 'PC {}'.format(i + 1), ha='center', va='center', fontsize=22)
+            plt.text(5.8, 0, '$r^2$ = {}'.format(adj_r2Plot), ha='right', va='center', fontsize=22)
+            plt.plot(plotfit, fit(plotfit), color="black", linestyle='--', linewidth=2)
+            plt.xlim(-3.5, 6)
+            plt.grid(color='k', linestyle='-', linewidth=0.1)
+            plt.tight_layout(pad=1.0)
+
+        plt.text(7, 10, 'Total Error by Principal Components', ha='center', fontsize=30)
+        plt.text(7, -10, 'Principal components ', ha='center', fontsize=30)
+        plt.text(-6, 10, 'Total error [kg/ha]', va='center', rotation='vertical', fontsize=30)
+        plt.savefig(f'{folder}/lPCA.png', dpi=300, bbox_inches="tight")
+        plt.close()
 
         # Running KPCA
         for kernel in self.kernels:
@@ -438,7 +514,7 @@ def save_model_comparison_table(models: Dict[str, Union[KPCAModel, Dict]], file:
         else:
             st = model.best
         rows.append(
-            f"{label} & {round(st['mae_test'])} & {round(st['ns_test'], 4)} & {round(st['nslog_test'], 4)} & {round(st['r2_test'], 3 )} \\\\"
+            f"{label} & {round(st['mae_test'])} & {round(st['ns_test'], 4)} & {round(st['nslog_test'], 4)} & {round(st['r2_test'], 3)} \\\\"
         )
 
     tableLaTEX = """
