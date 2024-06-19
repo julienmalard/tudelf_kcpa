@@ -19,12 +19,11 @@ from numpy import genfromtxt
 # import statsmodels.discrete.discrete_model as sm
 from sklearn.linear_model import LinearRegression
 
-##IMPORT PACKAGES:
 from src.sh_model.globalparameters import Original, Adjusted
 
 # from sklearn.linear_model import LogisticRegression
 
-os.environ["PROJ_LIB"] = "C:\\Users\\denni\\Anaconda3\\Library\\share";
+# os.environ["PROJ_LIB"] = "C:\\Users\\denni\\Anaconda3\\Library\\share";
 
 pd.set_option('mode.chained_assignment', None)
 
@@ -40,12 +39,12 @@ Range_bool = 0
 
 # %% Updated Precipitation and Temperature data
 print('Importing Temperature Data')
-T_max = pd.read_excel("../input_data/Data_Dennis/Data/Temperature/Max_Maharastra_1975-2019IMDData.xls", header=0, parse_dates=True,
+T_max = pd.read_excel("../../input_data/Temperature/Max_Maharastra_1975-2019IMDData.xls", header=0, parse_dates=True,
                       skiprows=[1, 2])
-T_min = pd.read_excel("../input_data/Data_Dennis/Data/Temperature/MINTemp1975_2019IMDData.xls", header=0, parse_dates=True, skiprows=[1, 2])
-T_mean = pd.read_excel("../input_data/Data_Dennis/Data/Temperature/MEAN_Maharastra_1975_2013IMDData.xls", header=0, parse_dates=True,
+T_min = pd.read_excel("../../input_data/Temperature/MINTemp1975_2019IMDData.xls", header=0, parse_dates=True, skiprows=[1, 2])
+T_mean = pd.read_excel("../../input_data/Temperature/MEAN_Maharastra_1975_2013IMDData.xls", header=0, parse_dates=True,
                        skiprows=[1, 2])
-T_coor = pd.read_excel("../input_data/Data_Dennis/Data/Temperature/T_coor.xlsx", header=0, index_col=0)
+T_coor = pd.read_excel("../../input_data/Temperature/T_coor.xlsx", header=0, index_col=0)
 
 T_max.loc[:, 'datetime'] = pd.to_datetime(T_max[['Year', 'Month', 'Day']])
 T_max.index = T_max['datetime']
@@ -64,7 +63,7 @@ T_min.loc[pd.Timestamp('2019-01-11 00:00:00')] = (T_min.loc[pd.Timestamp('2019-0
 
 # Dennis: Ra values taken from:
 # http://www.zohrabsamani.com/research_material/files/Hargreaves-samani.pdf
-Ra = pd.read_excel("../input_data/Data_Dennis/Data/Temperature/Ra.xlsx", header=0, index_col=0, parse_dates=True)
+Ra = pd.read_excel("../../input_data/Temperature/Ra.xlsx", header=0, index_col=0, parse_dates=True)
 
 Ra_calc = np.zeros(len(T_max))
 Ra_month = T_max.index.month
@@ -84,9 +83,9 @@ ET0 = 0.0023 * Ra_calc * (T_mean_est + 17.8) * np.sqrt(T_max - T_min)
 ET_coor = T_coor
 
 # Precipitation
-prec = pd.read_excel('../input_data/Data_Dennis/Data/Precipitation/Maharashtra_1975_2019.xls', sheet_name='Prec', header=0, parse_dates=True,
+prec = pd.read_excel('../../input_data/Precipitation/Maharashtra_1975_2019.xls', sheet_name='Prec', header=0, parse_dates=True,
                      skiprows=[1, 2])
-prec_coor = pd.read_excel('../input_data/Data_Dennis/Data/Precipitation/Maharashtra_1975_2019.xls', sheet_name='Coor', header=0, index_col=0)
+prec_coor = pd.read_excel('../../input_data/Precipitation/Maharashtra_1975_2019.xls', sheet_name='Coor', header=0, index_col=0)
 
 prec.loc[:, 'datetime'] = pd.to_datetime(prec[['Year', 'Month', 'Day']])
 prec.index = prec['datetime']
@@ -123,7 +122,7 @@ Kc_cotton[237:292] = 1.2
 Kc_cotton[292:337] = np.linspace(1.2, .7, 45)
 
 # Import prices
-prices = pd.read_excel('../input_data/Data_Dennis/Data/PRICES/Worldbank_IntlCommodityPrices.xlsx', sheet_name='Annual Prices (Real)',
+prices = pd.read_excel('../../input_data/PRICES/Worldbank_IntlCommodityPrices.xlsx', sheet_name='Annual Prices (Real)',
                        names=['Year', 'Cotton (USD/kg)', 'Phosphate (USD/mt)', 'DAP (USD/mt)', 'TSP (USD/mt)',
                               'Urea (USD/mt)',
                               'KCl (USD/mt)', 'Exchange Rate (USD/INR)'])
@@ -299,7 +298,7 @@ elif daily_bool == 0:
     print('Importing Reservoirs Data: Input data is monthly')
 
 if daily_bool == 1:
-    res = pd.read_excel('../input_data/Data_Dennis/Data/Reservoirs/rsv_D_1979-2014.xlsx', header=0, sep=",")
+    res = pd.read_excel('../../input_data/Reservoirs/rsv_D_1979-2014.xlsx', header=0, sep=",")
     res_coor = pd.read_csv('../../input_data/Reservoirs/reservoir locations solidaridad.csv', header=0, sep=",")
 
     ResID = np.arange(res['RES'].nunique())
@@ -323,7 +322,7 @@ if daily_bool == 1:
     for i in range(len(mod_survey)):
         mod_survey['Res Count'].iloc[i] = res_intake[mod_survey['Res Intake'][i]]
 else:
-    res = pd.read_excel('../input_data/Data_Dennis/Data/Reservoirs/Ghatanji_350_M_1981_2019.xlsx', header=0)
+    res = pd.read_excel('../../input_data/Reservoirs/Ghatanji_350_M_1981_2019.xlsx', header=0)
     res_coor = pd.read_csv('../../input_data/Reservoirs/Ghatanji_350_M_Coord.csv', header=0, sep=",")
 
     ResID = np.arange(res['RES'].nunique())
@@ -1013,7 +1012,7 @@ if Sens_bool == 0 and Bootstrap_bool == 0 and Range_bool == 1:
                delimiter=',')
 
 # %% Sensitivity Analysis Variable Plots
-
+"""
 Sens_Mat = genfromtxt("MCS/20210326_SensitivityResults_r2_MAE_NS_NSlog_Combined10000.csv", delimiter=',')
 Sens_Mat = Sens_Mat[~np.all(Sens_Mat == 0, axis=1)]
 if Sens_bool == 1:
@@ -1122,7 +1121,7 @@ plt.boxplot([np.mean(WbMat1[:, :, 0], axis=1),
             vert=False, positions=[1.6, 1.2], labels=['base run', 'with reservoir'], whis=99)
 plt.xlabel("Average yield (kg/ha)")
 
-# plt.savefig('Plots/Yield Comparison with Reservoir.png',dpi=300, bbox_inches = "tight")
+plt.savefig('Plots/Yield Comparison with Reservoir.png',dpi=300, bbox_inches = "tight")
 
 plt.figure(figsize=(12, 8))
 plt.subplot(211)
@@ -1137,9 +1136,9 @@ plt.plot(years, np.mean(VarMat14[:, 1:, 0], axis=0) / 10 ** 5, label='with reser
 plt.ylabel('Capital (lakh Rs)')
 plt.legend()
 
-# plt.savefig('Plots/Irrigation and Capital Comparison.png',dpi=300, bbox_inches = "tight")
+plt.savefig('Plots/Irrigation and Capital Comparison.png',dpi=300, bbox_inches = "tight")
 
-
+"""
 # %% Benefits
 plt.figure(figsize=(12, 8))
 plt.subplot(211)
@@ -1250,7 +1249,7 @@ for bar in bars2:
     yval = bar.get_height()
     plt.text(bar.get_x() + 0.1, yval + 50, yval)
 
-# plt.savefig('Plots/BenefitBarIrr.png',dpi=300, bbox_inches = "tight")
+plt.savefig('Plots/BenefitBarIrr.png',dpi=300, bbox_inches = "tight")
 
 # %% State variables and fluxes over tsimul
 # evap=ET0.iloc[:,evap_i]
@@ -1401,7 +1400,7 @@ plt.title('Average Soil Moisture', fontsize=16)
 plt.xlabel('Days of year', fontsize=16)
 plt.ylabel('Average Soil Moisture [mm]', fontsize=16)
 plt.legend(loc=2)
-# plt.savefig('Plots/SoilMoisture.png',dpi=300, bbox_inches = "tight")
+plt.savefig('Plots/SoilMoisture.png',dpi=300, bbox_inches = "tight")
 
 plt.figure(figsize=(12, 8))
 for i in range(len(years)):
@@ -1413,7 +1412,7 @@ plt.xlabel('Days of year', fontsize=16)
 plt.ylabel('Canopy Cover [-]', fontsize=16)
 plt.xlim(150, len(y) + 1)
 plt.legend()
-# plt.savefig('Plots/CC.png',dpi=300, bbox_inches = "tight")
+plt.savefig('Plots/CC.png',dpi=300, bbox_inches = "tight")
 
 plt.figure(figsize=(12, 8))
 for i in range(len(years)):
@@ -1425,7 +1424,7 @@ plt.xlabel('Days of year', fontsize=16)
 plt.ylabel('Water Stress [-]', fontsize=16)
 plt.xlim(150, len(y) + 1)
 plt.legend()
-# plt.savefig('Plots/WaterStress.png',dpi=300, bbox_inches = "tight")
+plt.savefig('Plots/WaterStress.png',dpi=300, bbox_inches = "tight")
 
 # %% average precipitation over the year
 
@@ -1464,44 +1463,50 @@ ax1.legend(loc=2, facecolor='white', framealpha=1, fontsize=14)
 ax2.legend(loc=1, facecolor='white', framealpha=1, fontsize=14)
 plt.savefig('Plots/Biomass.png', dpi=300, bbox_inches="tight")
 
-fig, ax1 = plt.subplots(figsize=(12, 8))
-y1 = prec_avg[prec_avg.index.year == plt_year]
-y2 = YieldMat_avg[YieldMat_avg['Year'] == plt_year]['Ta [mm]']
-y3 = YieldMat_avg[YieldMat_avg['Year'] == plt_year]['Ea [mm]']
-y4 = YieldMat_avg[YieldMat_avg['Year'] == plt_year]['SM [mm]']
-y5 = YieldMat_avg[YieldMat_avg['Year'] == plt_year]['CC [-]']
-y6 = YieldMat_avg[YieldMat_avg['Year'] == plt_year]['Ks [-]']
-y7 = YieldMat_avg[YieldMat_avg['Year'] == plt_year]['Irr [mm]']
-x = np.arange(1, len(y1) + 1, 1)
-ax2 = ax1.twinx()
-ax3 = ax1.twinx()
-ax3.bar(x, y1, label='Rainfall in %d' % plt_year, color='b', width=1, alpha=0.5)
-ax3.bar(x, y2, label='Transpiration in %d' % plt_year, color='g', width=1, alpha=0.5)
-ax3.bar(x, y3, label='Soil Evaporation in %d' % plt_year, color='r', width=1, alpha=0.5)
-ax1.plot(x, y4, label='Soil Moisture in %d' % plt_year, color='b', linewidth=2)
-ax2.plot(x, y5, label='CC in %d' % plt_year, color='lime', linewidth=2)
-ax2.plot(x, y6, label='$K_s$ in %d' % plt_year, color='magenta', linewidth=2)
-ax3.bar(x, y7, label='Irr in %d' % plt_year, color='orange', width=1, alpha=0.5)
-ax1.axvline(353, color='k', ls='--', lw=1.)
-ax1.axvline(158, color='k', ls='--', lw=1.)
-ax1.set_xlabel('Day of year', fontsize=18)
-ax1.set_ylabel('Soil Moisture [mm]', fontsize=18)
-ax2.set_ylabel('CC / $K_s$ [-]', fontsize=18)
-ax3.spines["left"].set_position(("axes", -0.1))
-ax3.spines["left"].set_visible(True)
-ax3.yaxis.set_label_position('left')
-ax3.yaxis.set_ticks_position('left')
-ax3.set_ylabel('Rainfall / Evaporation / Irrigation [mm]', fontsize=18)
-plt.title('Rainfall, Evaporation, SM, Irrigation, CC, and $K_s$ evolution in %d' % plt_year, fontsize=18)
-ax2.set_ylim(0, 1.1)
-ax2.text(125, .92, 'Planting', fontsize=14)
-ax2.text(322, .92, 'Harvest', fontsize=14)
-ax1.set_xlim(0, 365)
-ax1.legend(loc=6, facecolor='white', framealpha=1, fontsize=12)
-ax2.legend(loc=1, facecolor='white', framealpha=1, fontsize=12)
-ax3.legend(loc=2, facecolor='white', framealpha=1, fontsize=12)
-plt.savefig('Plots/CC_Ks.png', dpi=300, bbox_inches="tight")
+def plot_CC_ks():
+    fig, ax1 = plt.subplots(figsize=(12, 8))
+    y1 = prec_avg[prec_avg.index.year == plt_year]
+    y2 = YieldMat_avg[YieldMat_avg['Year'] == plt_year]['Ta [mm]']
+    y3 = YieldMat_avg[YieldMat_avg['Year'] == plt_year]['Ea [mm]']
+    y4 = YieldMat_avg[YieldMat_avg['Year'] == plt_year]['SM [mm]']
+    y5 = YieldMat_avg[YieldMat_avg['Year'] == plt_year]['CC [-]']
+    y6 = YieldMat_avg[YieldMat_avg['Year'] == plt_year]['Ks [-]']
+    y7 = YieldMat_avg[YieldMat_avg['Year'] == plt_year]['Irr [mm]']
+    x = np.arange(1, len(y1) + 1, 1)
+    ax2 = ax1.twinx()
+    ax3 = ax1.twinx()
+    ax4 = ax1.twinx()
+    ax3.bar(x, y1, label='Rainfall in %d' % plt_year, color='b', width=1, alpha=0.5)
+    ax3.bar(x, y2, label='Transpiration in %d' % plt_year, color='g', width=1, alpha=0.5)
+    ax4.bar(x, y3, label='Soil Evaporation in %d' % plt_year, color='r', width=1, alpha=0.5)
+    ax1.plot(x, y4, label='Soil Moisture in %d' % plt_year, color='b', linewidth=2)
+    ax2.plot(x, y5, label='CC in %d' % plt_year, color='lime', linewidth=2)
+    ax2.plot(x, y6, label='$K_s$ in %d' % plt_year, color='magenta', linewidth=2)
+    # ax3.bar(x, y7, label='Irr in %d' % plt_year, color='orange', width=1, alpha=0.5)
+    ax1.axvline(353, color='k', ls='--', lw=1.)
+    ax1.axvline(158, color='k', ls='--', lw=1.)
+    ax1.set_xlabel('Day of year', fontsize=18)
+    ax1.set_ylabel('Soil Moisture [mm]', fontsize=18)
+    ax2.set_ylabel('CC / $K_s$ [-]', fontsize=18)
+    ax3.spines["left"].set_position(("axes", -0.1))
+    ax3.spines["left"].set_visible(True)
+    ax3.yaxis.set_label_position('left')
+    ax3.yaxis.set_ticks_position('left')
+    ax3.set_ylabel('Rainfall / Transpiration [mm]', fontsize=18)
 
+    ax4.spines["right"].set_position(("axes", 1.1))
+    ax4.spines["right"].set_visible(True)
+    ax4.set_ylabel('Soil Evaporation [mm]', fontsize=18)
+
+    plt.title('Rainfall, Evaporation, SM, Irrigation, CC, and $K_s$ evolution in %d' % plt_year, fontsize=18)
+    ax2.set_ylim(0, 1.1)
+    ax4.set_ylim(0, 1.1)
+    ax2.text(125, .92, 'Planting', fontsize=14)
+    ax2.text(322, .92, 'Harvest', fontsize=14)
+    ax1.set_xlim(0, 365)
+    fig.legend(bbox_to_anchor=(0.12, 0.87), loc='upper left')
+    plt.savefig('Plots/CC_Ks.png', dpi=300, bbox_inches="tight")
+plot_CC_ks()
 # %%Yield difference
 
 plt.figure(figsize=(15, 7))
@@ -1623,9 +1628,9 @@ plt.text(-1, 280000, 'Precipitation comparisons', ha='center', fontsize=22)
 plt.text(-1, -18000, 'Months', ha='center', fontsize=22)
 plt.text(-17, 140000, 'Total precipitation in the region [mm]', va='center', rotation='vertical', fontsize=22)
 
-# plt.savefig('Plots/PrecipitationCompareForIrrigation.png',dpi=300, bbox_inches = "tight")
+plt.savefig('Plots/PrecipitationCompareForIrrigation.png',dpi=300, bbox_inches = "tight")
 
-# plt.savefig('Plots/PrecipitationCompareForIrrigation2.png', bbox_inches = "tight")
+plt.savefig('Plots/PrecipitationCompareForIrrigation2.png', bbox_inches = "tight")
 plt.savefig('Plots/PrecipitationCompareForIrrigation.png', dpi=300, bbox_inches="tight")
 
 # %% Coordinates for reservoirs
@@ -1639,28 +1644,28 @@ yielddif_color = mod_survey["Yield"] - mod_survey.index, (WbMat1[:, -1, 0])
 color_val = np.asarray(yielddif_color)
 plt.figure(figsize=(12, 10))
 plt.scatter(raw_survey["General/GPS_long"], raw_survey["General/GPS_lat"], c=color_val[1, :], cmap='coolwarm',
-            norm=colors.DivergingNorm(vmin=-1500., vcenter=0., vmax=3000), label='Farmers')
+            norm=colors.TwoSlopeNorm(vmin=-1500., vcenter=0., vmax=3000), label='Farmers')
 plt.legend()
 plt.xlabel('Long')
 plt.ylabel('Lat')
 plt.colorbar()
 plt.title("Calculated - Observed Yield Difference Map")
-plt.savefig('Plots/YieldDiffMap.png', dpi=300, bbox_inches="tight")
+# plt.savefig('Plots/YieldDiffMap.png', dpi=300, bbox_inches="tight")
 
 yielddif_color = benefit14 / Tsimul
 color_val = np.asarray(yielddif_color)
 plt.figure(figsize=(12, 10))
 plt.scatter(raw_survey["General/GPS_long"], raw_survey["General/GPS_lat"], c=color_val, cmap='coolwarm_r',
-            norm=colors.DivergingNorm(vmin=-5000., vcenter=0., vmax=5000), label='Farmers')
+            norm=colors.TwoSlopeNorm(vmin=-5000., vcenter=0., vmax=5000), label='Farmers')
 plt.legend()
 plt.xlabel('Long')
 plt.ylabel('Lat')
 plt.colorbar()
 plt.title("Yearly Benefit Map [Rs/y]")
-plt.savefig('Plots/BenefitYearly.png', dpi=300, bbox_inches="tight")
+# plt.savefig('Plots/BenefitYearly.png', dpi=300, bbox_inches="tight")
 
 # %% plotting ranges
-
+"""
 Ranges_Mat = genfromtxt("Ranges/2021-03-15-15-08-29_RangesMat2018.csv", delimiter=',')
 Benefit_Ranges = genfromtxt("Ranges/2021-03-15-15-08-29_RangesBenefit2018.csv", delimiter=',')
 Benefit_Boot = genfromtxt("Bootstrap/2021-03-16-23-41-48_BootBenefit2018.csv", delimiter=',')
@@ -1778,7 +1783,7 @@ plt.ylim(0, 5000)
 plt.legend()
 plt.grid(color='k', linestyle='-', linewidth=0.1)
 # plt.savefig('Plots/Survey_Yield_Uncertainties.png',dpi=300, bbox_inches = "tight")
-# plt.savefig('Plots/Survey_Yield_Boot2018.png',dpi=300, bbox_inches = "tight")
+# # plt.savefig('Plots/Survey_Yield_Boot2018.png',dpi=300, bbox_inches = "tight")
 
 maxrange = x_yield + xerr[0, :]
 minrange = x_yield - xerr[1, :]
@@ -1891,9 +1896,9 @@ plt.ylim(0, 5000)
 plt.legend()
 # plt.savefig('Plots/Old_New_Yield.png',dpi=300, bbox_inches = "tight")
 
-
+"""
 # %% Formatting gleam and NDVI data to be plotted
-ncSM = 'indat\SMroot_2018_GLEAM_v3.5b.nc'
+ncSM = '../../input_data/NDVI_GLEAM/SMroot_2018_GLEAM_v3.7b.nc'  # 'indat\SMroot_2018_GLEAM_v3.5b.nc'
 fh = Dataset(ncSM, mode='r')
 
 lons = fh.variables['lon'][:]
@@ -1908,10 +1913,10 @@ lat_0 = lats.mean()
 doy = [180, 210, 240, 270, 300, 330, 345]
 
 # NDVI=pd.read_csv('indat/NDVI_Farmers.csv', header = 0, sep = ",")
-TestCoord = pd.read_csv('indat/TestingCoordFarm30_Edited.csv', header=0, sep=",")
+TestCoord = pd.read_csv('../../input_data/NDVI_GLEAM/TestingCoordFarm30_Edited.csv', header=0, sep=",")
 
 # NDVI=NDVI.drop(['fid'],axis=1)
-SM_farmers = pd.read_csv('indat/TestingCoordFarm.csv', header=0, sep=",")
+SM_farmers = pd.read_csv('../../input_data/NDVI_GLEAM/TestingCoordFarm.csv', header=0, sep=",")
 
 # SM_farmers=SM_farmers.drop(SM_farmers.columns[[5,6]],axis=1)
 SM_id = np.zeros((len(TestCoord), 2))
@@ -2100,41 +2105,45 @@ plt.legend()
 # plt.savefig('Plots/CC_NDVI_DOY_Xinjiang.png',dpi=300, bbox_inches = "tight")
 
 # %%
-PlotID = 4  # 0=wardha, 1=ghatanji, 2=yavatmal, 3=amravati, 4=hinhanghat
-VarID = TestCoord['PlaceID'] == PlotID
+def get_region_id(region: str):
+    return dict( wardha=0, ghatanji=1, yavatmal=2, amravati=3, hinhanghat=4)[region]
+def plot_figure16(region: str):
+    PlotID = get_region_id(region)
 
-yPlot_model = SM_mat_mm_model[:, VarID]
-yPlot_model_min = SM_mat_mm_model_min[:, VarID]
-yPlot_model_max = SM_mat_mm_model_max[:, VarID]
-yPlot = SM_mat_mm[:, VarID]
-xPlot = doy
-plt.figure(figsize=(10, 7))
-plt.plot(xPlot, yPlot.mean(axis=1), c="blue", label="GLEAM SM")
-plt.plot(xPlot, yPlot_model.mean(axis=1), c="red", label="Model SM")
-plt.fill_between(xPlot, yPlot_model_min.mean(axis=1), yPlot_model_max.mean(axis=1), color='skyblue', alpha='0.5')
-plt.ylim(0, 250)
-plt.xlim(175, 350)
-plt.title('Evolution of GLEAM SM and model SM in {}'.format(SM_farmers['Loc'].iloc[PlotID]), fontsize=16)
-plt.ylabel('Soil moisture [mm]', fontsize=16)
-plt.xlabel('Day of year', fontsize=16)
-plt.grid(color='k', linestyle='-', linewidth=0.1)
-plt.legend()
-# plt.savefig('Plots/SM_Gleam_DOY_{}.png'.format(SM_farmers['Loc'].iloc[PlotID]),dpi=300, bbox_inches = "tight")
+    VarID = TestCoord['PlaceID'] == PlotID
 
-yPlot_model = CC_mat_model[:, VarID]
-yPlot = np.array(TestCoord[VarID].iloc[:, 7:]).T
-xPlot = doy
-plt.figure(figsize=(10, 7))
-plt.plot(xPlot, yPlot.min(axis=1), color='royalblue', linewidth=0.1)
-plt.plot(xPlot, yPlot.mean(axis=1), c="blue", label="NDVI range")
-plt.plot(xPlot, yPlot.max(axis=1), color='royalblue', linewidth=0.1)
-plt.fill_between(xPlot, yPlot.min(axis=1), yPlot.max(axis=1), color='skyblue', alpha='0.5')
-plt.plot(xPlot, yPlot_model.mean(axis=1), c="red", label="Model CC")
-plt.ylim(0, 1)
-plt.xlim(175, 350)
-plt.title('Evolution of NDVI and model CC in {}'.format(SM_farmers['Loc'].iloc[PlotID]), fontsize=16)
-plt.ylabel('Canopy Cover/NDVI [-]', fontsize=16)
-plt.xlabel('Day of year', fontsize=16)
-plt.grid(color='k', linestyle='-', linewidth=0.1)
-plt.legend()
-# plt.savefig('Plots/CC_NDVI_DOY_{}.png'.format(SM_farmers['Loc'].iloc[PlotID]),dpi=300, bbox_inches = "tight")
+    yPlot_model = SM_mat_mm_model[:, VarID]
+    yPlot_model_min = SM_mat_mm_model_min[:, VarID]
+    yPlot_model_max = SM_mat_mm_model_max[:, VarID]
+    yPlot = SM_mat_mm[:, VarID]
+    xPlot = doy
+    fig, axes = plt.subplots(2, 1, figsize=(10, 14))
+    axes[0].plot(xPlot, yPlot.mean(axis=1), c="blue", label="GLEAM SM")
+    axes[0].plot(xPlot, yPlot_model.mean(axis=1), c="red", label="Model SM")
+    axes[0].fill_between(xPlot, yPlot_model_min.mean(axis=1), yPlot_model_max.mean(axis=1), color='skyblue', alpha='0.5')
+    axes[0].ylim(0, 250)
+    axes[0].xlim(175, 350)
+    axes[0].title('Evolution of GLEAM SM and model SM in {}'.format(region), fontsize=16)
+    axes[0].ylabel('Soil moisture [mm]', fontsize=16)
+    axes[0].xlabel('Day of year', fontsize=16)
+    axes[0].grid(color='k', linestyle='-', linewidth=0.1)
+    axes[0].legend()
+
+    yPlot_model = CC_mat_model[:, VarID]
+    yPlot = np.array(TestCoord[VarID].iloc[:, 7:]).T
+    xPlot = doy
+    axes[1].plot(xPlot, yPlot.min(axis=1), color='royalblue', linewidth=0.1)
+    axes[1].plot(xPlot, yPlot.mean(axis=1), c="blue", label="NDVI range")
+    axes[1].plot(xPlot, yPlot.max(axis=1), color='royalblue', linewidth=0.1)
+    axes[1].fill_between(xPlot, yPlot.min(axis=1), yPlot.max(axis=1), color='skyblue', alpha='0.5')
+    axes[1].plot(xPlot, yPlot_model.mean(axis=1), c="red", label="Model CC")
+    axes[1].ylim(0, 1)
+    axes[1].xlim(175, 350)
+    axes[1].title('Evolution of NDVI and model CC in {}'.format(SM_farmers['Loc'].iloc[PlotID]), fontsize=16)
+    axes[1].ylabel('Canopy Cover/NDVI [-]', fontsize=16)
+    axes[1].xlabel('Day of year', fontsize=16)
+    axes[1].grid(color='k', linestyle='-', linewidth=0.1)
+    axes[1].legend()
+    axes[1].savefig('Plots/CC_NDVI_DOY_{}.png'.format(SM_farmers['Loc'].iloc[PlotID]),dpi=300, bbox_inches = "tight")
+
+plot_figure16("Wardha")
