@@ -53,14 +53,16 @@ class KPCAModel(object):
         if not os.path.isdir(folder):
             os.makedirs(folder)
         vars_x_with_model_yield = self.vars_X if "YieldModel" in self.vars_X else [*self.vars_X, "YieldModel"]
-        x = StandardScaler().fit_transform(self.data[vars_x_with_model_yield])
+        scaler = StandardScaler()
+        x = scaler.fit_transform(self.data[vars_x_with_model_yield])
         y = self.data[self.var_Y]
 
         # split training and test data
         x_train_initial, x_test_initial, y_train_initial, y_test_initial = train_test_split(x, y, test_size=0.25,
                                                                                             random_state=1)
+
         yield_model_index = vars_x_with_model_yield.index("YieldModel")
-        x_test_model_yield = x_test_initial[:, yield_model_index]
+        x_test_model_yield = scaler.inverse_transform(x_test_initial, copy=True)[:, yield_model_index]
         if "YieldModel" not in self.vars_X:
             x_test_initial = np.delete(x_test_initial, yield_model_index, axis=1)
             x_train_initial = np.delete(x_train_initial, yield_model_index, axis=1)
@@ -100,6 +102,9 @@ class KPCAModel(object):
                 # predict
                 x2_test = sm.add_constant(x_test[:, idx_est])  # sigmoid
                 y_pred_test = fitted_est_significant.predict(x2_test)
+
+                if True:
+                    pass
 
                 # evaluate
                 mae_train = mae(y_pred_train, y_train_initial)
@@ -184,14 +189,22 @@ class KPCAModel(object):
         # Hack for also predicting final yield when predictand is yield difference
         if self.var_Y in ["YieldDiff", "YieldObs"]:
             yield_adj = self.best["y_pred_test"]
+            yield_obs = y_test_initial
             if self.var_Y == "YieldDiff":
                 yield_adj += x_test_model_yield
+                yield_obs += x_test_model_yield
+            mae_test_yield = mae(yield_adj, yield_obs)
+            ns_test_yield = ns(yield_adj, yield_obs)
+            nslog_test_yield = ns_log(yield_adj, yield_obs)
+            r2_test_yield = r2(yield_adj, yield_obs)
+            self.best["mae_test"] = mae_test_yield
+            self.best["ns_test"] = ns_test_yield
+            self.best["nslog_test"] = nslog_test_yield
+            self.best["r2_test"] = r2_test_yield
 
-            yield_obs = y_test_initial
-
-            print(f'MAE of {self.best["kernel"]} Predicted Yield: {mae(yield_adj, yield_obs)} [kg/ha]')
-            print(f'NS of {self.best["kernel"]} Predicted Yield: {ns(yield_adj, yield_obs)} [-]')
-            print(f'NS log of {self.best["kernel"]} Predicted Yield: {ns_log(yield_adj, yield_obs)} [-]')
+            print(f'MAE of {self.best["kernel"]} Predicted Yield: {mae_test_yield} [kg/ha]')
+            print(f'NS of {self.best["kernel"]} Predicted Yield: {ns_test_yield} [-]')
+            print(f'NS log of {self.best["kernel"]} Predicted Yield: {nslog_test_yield} [-]')
             self._plot_adjusted_predicted_yield(yield_adj, yield_obs, folder=folder)
 
         self._plot_histogram(y_pred_all, y, folder=folder)
