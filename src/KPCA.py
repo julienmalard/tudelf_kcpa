@@ -35,7 +35,7 @@ def ns_log(pred, obs):
 
 
 def r2(pred, obs):
-    return r2_score(obs, pred)
+    return sm.OLS(pred, sm.add_constant(obs)).fit().rsquared_adj
 
 
 class KPCAModel(object):
